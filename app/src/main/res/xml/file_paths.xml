@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path
+        name="composer_camera"
+        path="composer_camera/" />
+    <cache-path
+        name="video_review_frames"
+        path="video_review_frames/" />
+    <cache-path
+        name="video_review_reports"
+        path="video_review_reports/" />
+</paths>

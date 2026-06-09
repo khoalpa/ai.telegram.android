@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_ai_chat"
+        android:shortcutId="chats"
+        android:shortcutLongLabel="@string/shortcut_chats_long"
+        android:shortcutShortLabel="@string/shortcut_chats_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="ai.telegram.android.MainActivity"
+            android:targetPackage="ai.telegram.android">
+            <extra
+                android:name="ai.telegram.android.extra.SHORTCUT_TARGET"
+                android:value="Chats" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_ai_search"
+        android:shortcutId="search"
+        android:shortcutLongLabel="@string/shortcut_search_long"
+        android:shortcutShortLabel="@string/shortcut_search_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="ai.telegram.android.MainActivity"
+            android:targetPackage="ai.telegram.android">
+            <extra
+                android:name="ai.telegram.android.extra.SHORTCUT_TARGET"
+                android:value="Search" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_ai_cache"
+        android:shortcutId="cache"
+        android:shortcutLongLabel="@string/shortcut_cache_long"
+        android:shortcutShortLabel="@string/shortcut_cache_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="ai.telegram.android.MainActivity"
+            android:targetPackage="ai.telegram.android">
+            <extra
+                android:name="ai.telegram.android.extra.SHORTCUT_TARGET"
+                android:value="Cache" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_ai_settings"
+        android:shortcutId="settings"
+        android:shortcutLongLabel="@string/shortcut_settings_long"
+        android:shortcutShortLabel="@string/shortcut_settings_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="ai.telegram.android.MainActivity"
+            android:targetPackage="ai.telegram.android">
+            <extra
+                android:name="ai.telegram.android.extra.SHORTCUT_TARGET"
+                android:value="Settings" />
+        </intent>
+    </shortcut>
+</shortcuts>

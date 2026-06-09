@@ -1,0 +1,18 @@
+.gradle/
+.idea/
+.kotlin/
+build/
+local.properties
+app/build/
+*.iml
+*.apk
+*.aab
+captures/
+
+# Root-level QA captures and logs are device/account artifacts, not source.
+/*.png
+/*.xml
+/*.txt
+/*.log
+/App configuration.html
+/App configuration_files/
