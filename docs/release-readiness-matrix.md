@@ -42,7 +42,7 @@ Hard no-go conditions:
 | Chat sync | Chat list, history paging, read state, edit/delete/pin updates persist after force-stop | QA notes plus logcat excerpt for failures. |
 | Translation | Pending, missing-model, ready, failed and hidden states all render readable fallback text | Screenshots for each state. |
 | Media | Image, video and document download/open flows work on Wi-Fi and respect mobile-data policy | Screenshots plus cache size before/after. |
-| Notifications | Android 13+ permission, local notification channel and tap-to-open-chat work | Screenshot of permission/channel and tapped destination. |
+| Notifications | Android 13+ permission, local notification channel, real inbound Telegram child notification and tap-to-open-chat work | Screenshot of permission/channel, notification shade child notification and tapped destination. |
 | Feature gates | Calls, Premium/Business and optional APIs either work or show a clear disabled state; optional Premium/Business actions must remain disabled unless binding/device QA is attached | Screenshots of disabled state or QA evidence for each enabled action group. |
 | Privacy/security | Share/deep-link intents accept only expected input, do not crash on malformed links, and generated QA artifacts are redacted before sharing | Unit test output plus device malformed-link/share probes, observed result and `scripts/redact-sensitive-artifacts.ps1` plus `-CheckOnly` output. |
 

@@ -206,9 +206,11 @@ private const val PREF_AUTO_PLAY_VIDEO = "auto_play_video"
 private const val PREF_VIDEO_SUBTITLES_ENABLED = "video_subtitles_enabled"
 private const val PREF_VIDEO_SOURCE_LANGUAGE = "video_source_language"
 private const val PREF_VIDEO_SUBTITLE_COLOR = "video_subtitle_color"
-private const val ENABLE_CALL_ACTIONS = false
-private const val ENABLE_OPTIONAL_TELEGRAM_APIS = false
-private const val ENABLE_BOT_WEB_APP_DATA_ACTIONS = false
+private val ENABLE_CALL_ACTIONS = OptionalTelegramFeatureGates.isEnabled(OptionalTelegramFeature.Calls)
+private val ENABLE_OPTIONAL_TELEGRAM_APIS =
+    OptionalTelegramFeatureGates.isEnabled(OptionalTelegramFeature.PremiumBusinessApis)
+private val ENABLE_BOT_WEB_APP_DATA_ACTIONS =
+    OptionalTelegramFeatureGates.isEnabled(OptionalTelegramFeature.BotWebAppData)
 private const val MESSAGE_PAGE_SIZE = 80
 private const val MAX_MESSAGE_PAGE_SIZE = 800
 private const val ChatTapLogTag = "AiTelegramChatTap"

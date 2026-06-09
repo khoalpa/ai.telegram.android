@@ -124,6 +124,28 @@ Compose UI tests to AOSP emulators or non-Xiaomi devices.
 - Open the header menu, then open Premium and confirm Premium, Stars and Business actions are disabled with a visible optional-API explanation.
 - Confirm gated actions do not show misleading success/request messages.
 
+## Inbound Notification Proof
+
+Use this only on a logged-in real Telegram QA account. The proof must use a real
+incoming Telegram message from another account/device, not the debug notification
+receiver.
+
+```powershell
+.\scripts\capture-inbound-notification-proof.ps1 -DeviceSerial <serial>
+```
+
+Minimum passing evidence:
+
+- `02-notifications-after-inbound.txt` contains a non-summary `ai.telegram.android`
+  message notification in channel `telegram_messages`.
+- `02-shade-after-inbound.png/xml` shows the real Android notification shade with
+  the AI Telegram child message notification visible.
+- `03-after-tap.png/xml` shows `MainActivity` opened to the matching chat/detail
+  route after the physical tap.
+- `03-activity-after-tap.txt` shows `ai.telegram.android/.MainActivity` in focus.
+- The script redaction check passes, and screenshots/XML/text are manually
+  reviewed for private chat names or message text before sharing the bundle.
+
 ## ML Kit Model Download
 
 - Open Cache and refresh downloaded models.
