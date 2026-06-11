@@ -60,6 +60,17 @@ To include a disposable real device in the connected portion:
 
 Attach `build/release-qa-*/summary.md` to the sign-off.
 
+For public beta promotion, run the stricter preflight after capturing the
+disposable TDLib auth-cycle proof:
+
+```powershell
+.\scripts\run-public-beta-preflight.ps1 -AuthCycleProofDir build\tdlib-auth-cycle-proof-<stamp>
+```
+
+If `-AuthCycleProofDir` is omitted, the preflight records the TDLib auth-cycle
+step as `BLOCKED` and exits non-zero. This is expected until a disposable
+phone/code/2FA/logout/reset proof bundle exists.
+
 For connected instrumentation, use the safe wrapper instead of the raw Gradle
 connected task:
 
@@ -71,6 +82,13 @@ The wrapper keeps Redmi/HyperOS on the Room/migration allowlist and sends
 Compose UI tests to AOSP emulators or non-Xiaomi devices.
 
 ## TDLib Login
+
+Use a disposable Telegram QA account for this section. To capture a redacted
+artifact bundle for the full auth cycle, run:
+
+```powershell
+.\scripts\capture-tdlib-auth-cycle-proof.ps1 -DeviceSerial <serial>
+```
 
 - Build the outside-Play APK with valid `telegramApiId` and `telegramApiHash`.
 - Install the ABI-matched APK for the device.

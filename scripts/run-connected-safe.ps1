@@ -17,7 +17,8 @@ $testPackage = "ai.telegram.android.test"
 $runner = "$testPackage/androidx.test.runner.AndroidJUnitRunner"
 $deviceSafeClasses = @(
     "ai.telegram.android.data.RepositoryRoomTest",
-    "ai.telegram.android.data.AppDatabaseMigrationTest"
+    "ai.telegram.android.data.AppDatabaseMigrationTest",
+    "ai.telegram.android.data.translation.VideoSubtitleGeneratorDeviceTest"
 )
 $composeUiAnnotation = "ai.telegram.android.ComposeUiConnectedTest"
 

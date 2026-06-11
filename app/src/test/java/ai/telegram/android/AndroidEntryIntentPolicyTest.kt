@@ -47,7 +47,8 @@ class AndroidEntryIntentPolicyTest {
     @Test
     fun isSafeSharedUriScheme_allowsOnlyLocalShareSchemes() {
         assertTrue(AndroidEntryIntentPolicy.isSafeSharedUriScheme("content"))
-        assertTrue(AndroidEntryIntentPolicy.isSafeSharedUriScheme("FILE"))
+        assertTrue(AndroidEntryIntentPolicy.isSafeSharedUriScheme("CONTENT"))
+        assertFalse(AndroidEntryIntentPolicy.isSafeSharedUriScheme("file"))
         assertFalse(AndroidEntryIntentPolicy.isSafeSharedUriScheme("http"))
         assertFalse(AndroidEntryIntentPolicy.isSafeSharedUriScheme("https"))
         assertFalse(AndroidEntryIntentPolicy.isSafeSharedUriScheme(null))

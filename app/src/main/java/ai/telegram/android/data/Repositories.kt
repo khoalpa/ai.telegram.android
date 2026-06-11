@@ -564,7 +564,6 @@ class MediaCacheRepository(
         return when {
             fileBytes > 0L -> fileBytes
             downloadedPrefixBytes > 0L -> downloadedPrefixBytes
-            sizeMb > 0 -> sizeMb * BYTES_PER_MB
             else -> 0L
         }
     }
