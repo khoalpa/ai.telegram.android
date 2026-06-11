@@ -19,7 +19,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MediaCacheEntity::class,
         VideoSubtitleCacheEntity::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -241,6 +241,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val migration13To14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE chats ADD COLUMN isMainList INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE senders ADD COLUMN isContact INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         val migrations: Array<Migration>
             get() = arrayOf(
                 migration1To2,
@@ -254,7 +261,8 @@ abstract class AppDatabase : RoomDatabase() {
                 migration9To10,
                 migration10To11,
                 migration11To12,
-                migration12To13
+                migration12To13,
+                migration13To14
             )
 
         private fun createPerformanceIndexes(db: SupportSQLiteDatabase) {
@@ -273,6 +281,19 @@ abstract class AppDatabase : RoomDatabase() {
             db.execSQL("CREATE INDEX IF NOT EXISTS index_media_cache_lastAccessedAtMillis ON media_cache(lastAccessedAtMillis)")
         }
 
+        private val cleanupCallback = object : RoomDatabase.Callback() {
+            override fun onOpen(db: SupportSQLiteDatabase) {
+                super.onOpen(db)
+                db.execSQL(
+                    """
+                    UPDATE chats
+                    SET lastMessagePreview = substr(lastMessagePreview, 1, 500)
+                    WHERE length(lastMessagePreview) > 500
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase {
             return instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -280,6 +301,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "ai_telegram_android.db"
                 ).addMigrations(*migrations)
+                    .addCallback(cleanupCallback)
                     .build()
                     .also { instance = it }
             }

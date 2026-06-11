@@ -26,6 +26,7 @@ import ai.telegram.android.data.telegram.TdLibReflectionClient
 import ai.telegram.android.data.telegram.TdLibStatus
 import ai.telegram.android.data.telegram.TelegramBotCommand
 import ai.telegram.android.data.telegram.TelegramBotMenuButton
+import ai.telegram.android.data.telegram.MediaSendOptions
 import ai.telegram.android.data.telegram.TelegramActiveSession
 import ai.telegram.android.data.telegram.TelegramBusinessChatLink
 import ai.telegram.android.data.telegram.TelegramChatPermissionPreset
@@ -41,6 +42,7 @@ import ai.telegram.android.data.telegram.TelegramStarBalance
 import ai.telegram.android.data.telegram.TelegramStarTransaction
 import ai.telegram.android.data.telegram.TelegramStory
 import ai.telegram.android.data.telegram.TelegramStoryState
+import ai.telegram.android.data.telegram.TelegramOutgoingMedia
 import ai.telegram.android.data.telegram.TelegramWebAppUrl
 import ai.telegram.android.data.translation.MlKitModelManager
 import ai.telegram.android.data.translation.MlKitModelDownloadProgress
@@ -51,6 +53,7 @@ import ai.telegram.android.data.translation.TranslationQueueResult
 import ai.telegram.android.data.translation.TranslationLanguagePair
 import ai.telegram.android.data.translation.VietnameseTranslationPairs
 import ai.telegram.android.notifications.TelegramNotificationManager
+import ai.telegram.android.notifications.TelegramPushRegistrar
 import ai.telegram.android.ui.AiThemeTokens
 import ai.telegram.android.ui.AppThemeMode
 import ai.telegram.android.ui.MessagePrivacyPolicy
@@ -169,7 +172,6 @@ import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.atomic.AtomicReference
-import java.util.Locale
 import java.util.UUID
 
 
@@ -214,31 +216,11 @@ private val ENABLE_BOT_WEB_APP_DATA_ACTIONS =
 private const val MESSAGE_PAGE_SIZE = 80
 private const val MAX_MESSAGE_PAGE_SIZE = 800
 private const val ChatTapLogTag = "AiTelegramChatTap"
-const val UrlAnnotationTag = "URL"
-val UrlPattern = Regex("""(?i)\b((?:https?://|tg://|www\.|t\.me/|telegram\.me/)[^\s<]+)""")
 
 data class PreparedOutgoingMedia(
     val localPath: String,
     val kind: MessageKind
 )
-
-fun normalizeUrl(url: String): String {
-    return when {
-        url.startsWith("www.", ignoreCase = true) -> "https://$url"
-        url.startsWith("t.me/", ignoreCase = true) -> "https://$url"
-        url.startsWith("telegram.me/", ignoreCase = true) -> "https://$url"
-        else -> url
-    }
-}
-
-fun isTelegramUrl(url: String): Boolean {
-    val lower = url.lowercase(Locale.ROOT)
-    return lower.startsWith("tg://") ||
-        lower.startsWith("https://t.me/") ||
-        lower.startsWith("http://t.me/") ||
-        lower.startsWith("https://telegram.me/") ||
-        lower.startsWith("http://telegram.me/")
-}
 
 private fun Context.muteDurationLabel(seconds: Int): String {
     return when (seconds) {
@@ -309,7 +291,10 @@ private fun Context.operationSucceeded(messageRes: Int, vararg args: Any): Strin
     return getString(R.string.telegram_operation_succeeded, getString(messageRes, *args).toTelegramOperationLabel())
 }
 
-fun Context.prepareOutgoingTelegramMedia(uri: Uri): PreparedOutgoingMedia {
+fun Context.prepareOutgoingTelegramMedia(
+    uri: Uri,
+    forcedKind: MessageKind? = null
+): PreparedOutgoingMedia {
     require(uri.scheme == "content" || uri.scheme == "file") {
         "Unsupported media source"
     }
@@ -319,9 +304,10 @@ fun Context.prepareOutgoingTelegramMedia(uri: Uri): PreparedOutgoingMedia {
             "File is larger than ${MAX_OUTGOING_MEDIA_BYTES / (1024L * 1024L)} MB"
         }
     }
-    val kind = when {
+    val kind = forcedKind ?: when {
         mimeType.startsWith("image/") -> MessageKind.Image
         mimeType.startsWith("video/") -> MessageKind.Video
+        mimeType.startsWith("audio/") -> MessageKind.Audio
         else -> MessageKind.File
     }
     val displayName = contentResolver.displayName(uri)
@@ -603,6 +589,7 @@ fun TelegramClientApp(
     var selectedTab by remember { mutableStateOf(AppTab.Chats) }
     var selectedChatId by remember { mutableStateOf<Long?>(null) }
     var messagePageSize by rememberSaveable(selectedChatId) { mutableIntStateOf(MESSAGE_PAGE_SIZE) }
+    var transientOpenedChats by remember { mutableStateOf<Map<Long, TelegramChat>>(emptyMap()) }
     var pendingPrivateChatOpen by remember { mutableStateOf<Pair<Long, String>?>(null) }
     var pendingNotificationChatId by rememberSaveable { mutableStateOf<Long?>(null) }
     var pendingSharedText by remember { mutableStateOf("") }
@@ -648,6 +635,7 @@ fun TelegramClientApp(
     val cachedTranslationUids = remember(tdLibRestartToken) { mutableSetOf<String>() }
     val chats by appViewModel.chats.collectAsState(initial = emptyList())
     val senders by appViewModel.senders.collectAsState(initial = emptyList())
+    val contacts by appViewModel.contacts.collectAsState(initial = emptyList())
     val selectedChatMessagesFlow = remember(selectedChatId) {
         selectedChatId?.let { appViewModel.observeMessagesForChat(it) } ?: flowOf(emptyList<TelegramMessage>())
     }
@@ -668,6 +656,7 @@ fun TelegramClientApp(
     var telegramStarTransactions by remember { mutableStateOf<List<TelegramStarTransaction>>(emptyList()) }
     var telegramBusinessLinks by remember { mutableStateOf<Map<String, TelegramBusinessChatLink>>(emptyMap()) }
     val telegramNotifications = remember(context) { TelegramNotificationManager(context) }
+    val telegramPushRegistrar = remember(context) { TelegramPushRegistrar(context) }
     var notificationPermissionGranted by remember {
         mutableStateOf(TelegramNotificationManager.hasPostNotificationsPermission(context))
     }
@@ -729,6 +718,31 @@ fun TelegramClientApp(
             }
         }
     }
+    fun rememberTransientOpenedChat(chat: TelegramChat) {
+        transientOpenedChats = if (chat.isMainList) {
+            transientOpenedChats - chat.id
+        } else {
+            val existing = transientOpenedChats[chat.id]
+            val displayChat = if (existing != null && chat.title.isBlank()) {
+                existing.copy(
+                    unreadCount = chat.unreadCount,
+                    lastMessagePreview = chat.lastMessagePreview.ifBlank { existing.lastMessagePreview },
+                    updatedAtMillis = chat.updatedAtMillis,
+                    activeAction = chat.activeAction.ifBlank { existing.activeAction },
+                    lastReadInboxMessageId = maxOf(existing.lastReadInboxMessageId, chat.lastReadInboxMessageId),
+                    lastReadOutboxMessageId = maxOf(existing.lastReadOutboxMessageId, chat.lastReadOutboxMessageId),
+                    pinnedMessageId = chat.pinnedMessageId.takeIf { it > 0L } ?: existing.pinnedMessageId
+                )
+            } else {
+                chat
+            }
+            (transientOpenedChats + (chat.id to displayChat))
+                .entries
+                .sortedByDescending { it.value.updatedAtMillis }
+                .take(20)
+                .associate { it.key to it.value }
+        }
+    }
     val callMediaEngine = remember(context) {
         TelegramCallMediaEngine(
             context = context.applicationContext,
@@ -749,6 +763,7 @@ fun TelegramClientApp(
             onStatus = { status -> coroutineScope.launch { tdLibStatus = status } },
             onChat = { chat ->
                 coroutineScope.launch {
+                    rememberTransientOpenedChat(chat)
                     chatRepository.upsert(chat)
                     if (chat.title.isBlank()) {
                         requestChatMetadata(chat.id)
@@ -798,6 +813,9 @@ fun TelegramClientApp(
                         appViewModel.markOutboxRead(update.chatId, update.lastReadMessageId)
                     } else {
                         appViewModel.markInboxRead(update.chatId, update.lastReadMessageId, update.unreadCount)
+                        if (update.unreadCount <= 0) {
+                            telegramNotifications.cancelChat(update.chatId)
+                        }
                     }
                 }
             },
@@ -1000,6 +1018,13 @@ fun TelegramClientApp(
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
         ) {
             requestNotificationPermission()
+        }
+    }
+
+    LaunchedEffect(tdLibStatus, tdLibClient) {
+        if (tdLibStatus == TdLibStatus.Ready) {
+            telegramPushRegistrar.registerIfAvailable(tdLibClient)
+            tdLibClient.loadContacts()
         }
     }
 
@@ -1311,6 +1336,10 @@ fun TelegramClientApp(
                     }
                     MessageKind.Video -> Unit
                     MessageKind.File,
+                    MessageKind.Voice,
+                    MessageKind.VideoNote,
+                    MessageKind.Audio,
+                    MessageKind.Sticker,
                     MessageKind.Text -> Unit
                 }
             }
@@ -1366,7 +1395,7 @@ fun TelegramClientApp(
                 selectedTab = selectedTab,
                 unreadCount = chats.sumOf { it.unreadCount },
                 unreadChannelCount = chats.count { it.isChannelChat() && it.unreadCount > 0 },
-                contactCount = senders.count { it.type == "user" },
+                contactCount = contacts.size,
                 onMenuClick = {
                     selectedChatId = null
                     selectedTab = AppTab.Menu
@@ -1401,6 +1430,7 @@ fun TelegramClientApp(
                 AppTab.Chats -> ChatScreen(
                     chats = chats,
                     selectedChatId = selectedChatId,
+                    selectedChatOverride = selectedChatId?.let(transientOpenedChats::get),
                     messages = messages,
                     pendingSharedText = pendingSharedText,
                     pendingSharedUris = pendingSharedUris,
@@ -1479,10 +1509,15 @@ fun TelegramClientApp(
                         tdLibClient.sendReplyTextMessage(chatId, replyToMessageId, text, options)
                         telegramOperationMessage = context.operationPending(R.string.telegram_action_reply_requested)
                     },
-                    onSendMedia = { chatId, uri, caption, options ->
+                    onSendMedia = { chatId, composerMedia, caption, options ->
                         coroutineScope.launch {
                             val result = withContext(Dispatchers.IO) {
-                                runCatching { context.prepareOutgoingTelegramMedia(uri) }
+                                runCatching {
+                                    context.prepareOutgoingTelegramMedia(
+                                        uri = composerMedia.uri,
+                                        forcedKind = composerMedia.kind
+                                    )
+                                }
                             }
                             result.onSuccess { media ->
                                 tdLibClient.sendMediaMessage(
@@ -1490,6 +1525,44 @@ fun TelegramClientApp(
                                     localPath = media.localPath,
                                     kind = media.kind,
                                     caption = caption,
+                                    options = options,
+                                    mediaOptions = MediaSendOptions(
+                                        highQualityPhoto = composerMedia.highQualityPhoto && media.kind == MessageKind.Image
+                                    )
+                                )
+                                telegramOperationMessage = context.operationPending(R.string.telegram_action_send_media_requested)
+                            }.onFailure { error ->
+                                telegramOperationMessage = resources.getString(
+                                    R.string.telegram_action_send_media_failed,
+                                    error.localizedMessage ?: error.javaClass.simpleName
+                                )
+                            }
+                        }
+                    },
+                    onSendMediaAlbum = { chatId, composerMedia, caption, options ->
+                        coroutineScope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    composerMedia.take(10).mapIndexed { index, item ->
+                                        val prepared = context.prepareOutgoingTelegramMedia(
+                                            uri = item.uri,
+                                            forcedKind = item.kind
+                                        )
+                                        TelegramOutgoingMedia(
+                                            localPath = prepared.localPath,
+                                            kind = prepared.kind,
+                                            caption = if (index == 0) caption else "",
+                                            mediaOptions = MediaSendOptions(
+                                                highQualityPhoto = item.highQualityPhoto && prepared.kind == MessageKind.Image
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                            result.onSuccess { media ->
+                                tdLibClient.sendMediaAlbum(
+                                    chatId = chatId,
+                                    media = media,
                                     options = options
                                 )
                                 telegramOperationMessage = context.operationPending(R.string.telegram_action_send_media_requested)
@@ -1562,6 +1635,10 @@ fun TelegramClientApp(
                         )
                         telegramOperationMessage = context.operationPending(R.string.telegram_action_forward_requested)
                     },
+                    onResendMessage = { message ->
+                        tdLibClient.resendMessages(message.chatId, listOf(message.id))
+                        telegramOperationMessage = context.operationPending(R.string.telegram_action_resend_requested)
+                    },
                     onPinMessage = { message ->
                         tdLibClient.pinMessage(message.chatId, message.id)
                         telegramOperationMessage = context.operationPending(R.string.telegram_action_pin_message_requested)
@@ -1580,6 +1657,14 @@ fun TelegramClientApp(
                         if (fromMessageId > 0 && requestedHistoryPages.add(key)) {
                             requestOlderChatHistory(chatId = chatId, fromMessageId = fromMessageId)
                         }
+                    },
+                    onSearchChatMessages = { chatId, searchQuery, filter ->
+                        tdLibClient.searchChatMessages(chatId, searchQuery, filter)
+                        telegramOperationMessage = context.operationPending(R.string.telegram_action_search_messages_requested)
+                    },
+                    onSearchPublicPosts = { searchQuery, filter ->
+                        tdLibClient.searchPublicPosts(searchQuery, filter)
+                        telegramOperationMessage = context.operationPending(R.string.telegram_action_search_public_posts_requested)
                     },
                     onRefreshChats = {
                         tdLibClient.loadMainChatList()
@@ -1688,7 +1773,7 @@ fun TelegramClientApp(
                     managementActions = chatManagementActions
                 )
                 AppTab.Contacts -> ContactsScreen(
-                    contacts = senders.filter { it.type == "user" },
+                    contacts = contacts,
                     operationMessage = telegramOperationMessage,
                     onRefreshContacts = {
                         tdLibClient.loadContacts()
@@ -1885,7 +1970,7 @@ fun TelegramClientApp(
                 )
                 AppTab.Calls -> CallsScreen(
                     calls = telegramCalls.values.sortedByDescending { it.id },
-                    contacts = senders.filter { it.type == "user" },
+                    contacts = contacts,
                     operationMessage = telegramOperationMessage,
                     callActionsEnabled = ENABLE_CALL_ACTIONS && callMediaEngine.isAvailable,
                     onStartCall = { userId, isVideo ->
@@ -1913,7 +1998,7 @@ fun TelegramClientApp(
                 )
                 AppTab.SecretChats -> SecretChatDirectoryScreen(
                     secretChats = chats.filter { it.isSecretChat() },
-                    contacts = senders.filter { it.type == "user" },
+                    contacts = contacts,
                     operationMessage = telegramOperationMessage,
                     onOpenChat = { chat ->
                         selectedTab = AppTab.Chats
@@ -2390,7 +2475,7 @@ fun TelegramClientApp(
                                 tdLibRestartToken += 1
                             },
                             chatCount = chats.size,
-                            contactCount = senders.count { it.type == "user" }
+                            contactCount = contacts.size
                         )
                     }
                 }
@@ -2714,6 +2799,10 @@ private fun TelegramMessage.pendingPreview(context: android.content.Context): St
         MessageKind.Image -> context.getString(R.string.media_image)
         MessageKind.Video -> context.getString(R.string.media_video)
         MessageKind.File -> context.getString(R.string.media_file)
+        MessageKind.Voice -> context.getString(R.string.media_voice)
+        MessageKind.VideoNote -> context.getString(R.string.media_video_message)
+        MessageKind.Audio -> context.getString(R.string.media_audio)
+        MessageKind.Sticker -> context.getString(R.string.media_sticker)
         MessageKind.Text -> context.getString(R.string.no_message_preview)
     }
 }

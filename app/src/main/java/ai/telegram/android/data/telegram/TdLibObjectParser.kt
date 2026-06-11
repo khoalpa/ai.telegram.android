@@ -63,7 +63,8 @@ internal class TdLibObjectParser(
             type = type,
             unreadCount = unreadCount,
             lastMessagePreview = lastMessage.previewText(),
-            updatedAtMillis = nowMillis()
+            updatedAtMillis = nowMillis(),
+            isMainList = chat.isInMainChatList()
         )
     }
 
@@ -76,7 +77,8 @@ internal class TdLibObjectParser(
             type = "chat",
             unreadCount = 0,
             lastMessagePreview = lastMessage.previewText(),
-            updatedAtMillis = nowMillis()
+            updatedAtMillis = nowMillis(),
+            isMainList = false
         )
     }
 
@@ -131,7 +133,8 @@ internal class TdLibObjectParser(
             id = "user:$id",
             displayName = displayName,
             type = "user",
-            updatedAtMillis = nowMillis()
+            updatedAtMillis = nowMillis(),
+            isContact = user.fieldAny("isContact", "is_contact") as? Boolean ?: false
         )
     }
 
@@ -155,7 +158,7 @@ internal class TdLibObjectParser(
             id = fileId,
             localPath = file.localPath(),
             sizeMb = tdLibBytesToMb(sizeBytes),
-            downloadedPrefixBytes = file.localDownloadedPrefixBytes()
+            downloadedPrefixBytes = file.transferProgressBytes()
         )
     }
 
@@ -491,6 +494,51 @@ internal class TdLibObjectParser(
                     fileName = document?.field("fileName") as? String ?: ""
                 )
             }
+            "MessageAudio" -> {
+                val audio = content.field("audio")
+                val thumbnailFile = audio?.field("albumCoverThumbnail")
+                    ?.let { thumbnail -> thumbnail.fieldAny("file", "photo") ?: thumbnail.findFileObject() }
+                parsedFile(
+                    kind = MessageKind.Audio,
+                    file = audio.fieldAny("audio", "file") ?: audio.findFileObject(),
+                    thumbnailFile = thumbnailFile,
+                    mimeType = audio?.field("mimeType") as? String ?: "audio/mpeg",
+                    fileName = audio?.field("fileName") as? String ?: ""
+                )
+            }
+            "MessageVoiceNote" -> {
+                val voiceNote = content.field("voiceNote")
+                parsedFile(
+                    kind = MessageKind.Voice,
+                    file = voiceNote.fieldAny("voice", "voiceNote", "file") ?: voiceNote.findFileObject(),
+                    mimeType = voiceNote?.field("mimeType") as? String ?: "audio/ogg",
+                    fileName = voiceNote?.field("fileName") as? String ?: ""
+                )
+            }
+            "MessageVideoNote" -> {
+                val videoNote = content.field("videoNote")
+                val thumbnailFile = videoNote?.field("thumbnail")
+                    ?.let { thumbnail -> thumbnail.fieldAny("file", "photo") ?: thumbnail.findFileObject() }
+                parsedFile(
+                    kind = MessageKind.VideoNote,
+                    file = videoNote.fieldAny("video", "videoNote", "file") ?: videoNote.findFileObject(),
+                    thumbnailFile = thumbnailFile,
+                    mimeType = videoNote?.field("mimeType") as? String ?: "video/mp4",
+                    fileName = videoNote?.field("fileName") as? String ?: ""
+                )
+            }
+            "MessageSticker" -> {
+                val sticker = content.field("sticker")
+                val thumbnailFile = sticker?.field("thumbnail")
+                    ?.let { thumbnail -> thumbnail.fieldAny("file", "photo") ?: thumbnail.findFileObject() }
+                parsedFile(
+                    kind = MessageKind.Sticker,
+                    file = sticker.fieldAny("sticker", "file") ?: sticker.findFileObject(),
+                    thumbnailFile = thumbnailFile,
+                    mimeType = sticker?.field("mimeType") as? String ?: "",
+                    fileName = sticker?.field("emoji") as? String ?: ""
+                )
+            }
             else -> TdLibParsedMedia(MessageKind.Text)
         }
     }
@@ -508,6 +556,10 @@ internal class TdLibObjectParser(
             MessageKind.Image -> "Image"
             MessageKind.Video -> "Video"
             MessageKind.File -> "File"
+            MessageKind.Voice -> "Voice"
+            MessageKind.VideoNote -> "Video message"
+            MessageKind.Audio -> "Audio"
+            MessageKind.Sticker -> "Sticker"
             MessageKind.Text -> ""
         }
     }
@@ -620,7 +672,7 @@ internal class TdLibObjectParser(
             fileName = fileName,
             thumbnailFileId = (thumbnailFile.fieldAny("id", "fileId") as? Number)?.toInt() ?: 0,
             thumbnailLocalPath = thumbnailFile.localPath().takeIf { thumbnailFile.localDownloadCompleted() }.orEmpty(),
-            downloadedPrefixBytes = file.localDownloadedPrefixBytes(),
+            downloadedPrefixBytes = file.transferProgressBytes(),
             sizeMb = tdLibBytesToMb(sizeBytes)
         )
     }
@@ -652,6 +704,12 @@ internal fun Any?.asObjectList(): List<Any?> {
     if (!valueClass.isArray) return emptyList()
     return (0 until java.lang.reflect.Array.getLength(this))
         .map { index -> java.lang.reflect.Array.get(this, index) }
+}
+
+private fun Any?.isInMainChatList(): Boolean {
+    return field("positions").asObjectList().any { position ->
+        position.field("list")?.javaClass?.simpleName == "ChatListMain"
+    }
 }
 
 private fun Any?.pollQuestionText(): String {
@@ -710,6 +768,14 @@ internal fun Any?.localPath(): String {
 
 internal fun Any?.localDownloadedPrefixBytes(): Long {
     return (field("local")?.fieldAny("downloadedPrefixSize", "downloadedSize") as? Number)?.toLong() ?: 0L
+}
+
+internal fun Any?.remoteUploadedBytes(): Long {
+    return (field("remote")?.fieldAny("uploadedSize", "uploaded_size") as? Number)?.toLong() ?: 0L
+}
+
+internal fun Any?.transferProgressBytes(): Long {
+    return maxOf(localDownloadedPrefixBytes(), remoteUploadedBytes())
 }
 
 internal fun Any?.localDownloadCompleted(): Boolean {

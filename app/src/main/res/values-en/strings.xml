@@ -36,6 +36,7 @@
     <string name="chat_search_result_count" tools:ignore="PluralsCandidate">%1$d/%2$d results</string>
     <string name="chat_search_previous">Previous result</string>
     <string name="chat_search_next">Next result</string>
+    <string name="chat_search_public_posts">Search public posts</string>
     <string name="chat_message_count" tools:ignore="PluralsCandidate">%1$d posts</string>
     <string name="jump_to_first_message">Go to first post</string>
     <string name="jump_to_last_message">Go to last post</string>
@@ -371,6 +372,8 @@
     <string name="profile_members_notifications_status">Profile/contact sync uses getUser/getChat/getContacts; members/admin and push notifications need permissions, schema, and real-device QA.</string>
     <string name="directory_summary" tools:ignore="PluralsCandidate">%1$d chats • %2$d channels • %3$d groups • %4$d contacts</string>
     <string name="telegram_action_search_requested">Telegram search requested.</string>
+    <string name="telegram_action_search_messages_requested">Full-history message search requested.</string>
+    <string name="telegram_action_search_public_posts_requested">Public post search requested.</string>
     <string name="telegram_action_join_requested">Join channel/link requested.</string>
     <string name="telegram_action_contacts_requested">Telegram contact sync requested.</string>
     <string name="telegram_action_send_message_requested">Send message requested.</string>
@@ -456,6 +459,7 @@
     <string name="telegram_action_reaction_requested">Reaction requested.</string>
     <string name="telegram_action_send_media_requested">Send media requested.</string>
     <string name="telegram_action_send_media_failed">Could not send media: %1$s</string>
+    <string name="telegram_action_resend_requested">Resend message requested.</string>
     <string name="telegram_action_send_poll_requested">Create poll requested.</string>
     <string name="telegram_action_send_contact_requested">Send contact requested.</string>
     <string name="create_poll">Create poll</string>
@@ -468,6 +472,10 @@
     <string name="send_contact">Send contact</string>
     <string name="content_filter_all">All</string>
     <string name="content_filter_media">Media</string>
+    <string name="content_filter_photos_videos">Photos &amp; videos</string>
+    <string name="content_filter_audio">Audio</string>
+    <string name="content_filter_voice">Voice</string>
+    <string name="content_filter_stickers">Stickers</string>
     <string name="content_filter_files">Files</string>
     <string name="content_filter_links">Links</string>
     <string name="sender_filter_all">All senders</string>
@@ -490,6 +498,7 @@
     <string name="cancel_reply">Cancel reply</string>
     <string name="forward_message">Forward</string>
     <string name="forward_chat_id_hint">Target chat ID</string>
+    <string name="resend_message">Resend</string>
     <string name="pin_message">Pin message</string>
     <string name="unpin_message">Unpin message</string>
     <string name="edit_message">Edit message</string>
@@ -504,6 +513,7 @@
     <string name="message_action_edit_requested">Edit requested.</string>
     <string name="message_action_delete_requested">Delete requested.</string>
     <string name="message_action_reaction_requested">Reaction requested.</string>
+    <string name="message_action_resend_requested">Resend requested.</string>
     <string name="translation_retry_requested">Retrying translation.</string>
     <string name="retry_translation">Retry translation</string>
     <string name="translation_retry_generic_hint">The translation is not available yet. Retry to queue this message for background translation.</string>
@@ -513,7 +523,6 @@
     <string name="translation_retry_transient_hint">Translation failed temporarily. Retry to queue this message for background translation.</string>
     <string name="translated_only">Translated view only</string>
     <string name="translation_pending">Translating&#8230;</string>
-    <string name="translation_ready">Translated to English</string>
     <string name="translation_failed">No translation available</string>
     <string name="translation_model_hint">No suitable translation model is available. Open Cache to download the related translation model or pair.</string>
     <string name="translation_model_pair_hint">No suitable translation model is available. Open Cache to download %1$s.</string>
@@ -533,7 +542,6 @@
         <item quantity="one">%1$d unread</item>
         <item quantity="other">%1$d unread</item>
     </plurals>
-    <string name="message_meta">%1$s &#8226; %2$s</string>
     <string name="inline_separator"> &#8226; </string>
     <string name="media_generic">media</string>
     <string name="translation_cache_metric" tools:ignore="PluralsCandidate">%1$d items &#8226; %2$d MB</string>
@@ -573,6 +581,10 @@
     <string name="media_image">Image</string>
     <string name="media_video">Video</string>
     <string name="media_file">File</string>
+    <string name="media_voice">Voice</string>
+    <string name="media_video_message">Video message</string>
+    <string name="media_audio">Audio</string>
+    <string name="media_sticker">Sticker</string>
     <string name="media_image_content_description">Message image</string>
     <string name="close_media_viewer">Close media</string>
     <string name="previous_media">Previous media</string>
@@ -596,7 +608,6 @@
     <string name="video_subtitles">Full-screen video subtitles</string>
     <string name="video_subtitles_generating">Listening to the original audio and creating subtitles&#8230;</string>
     <string name="video_subtitles_translating">Creating Vietnamese subtitles from the original transcript&#8230;</string>
-    <string name="video_subtitles_unavailable">Could not create subtitles: %1$s</string>
     <string name="video_subtitles_permission_required">Speech/audio recognition permission is required to create subtitles from video audio.</string>
     <string name="video_subtitle_mode_source">Original</string>
     <string name="video_subtitle_mode_vietnamese">Vietnamese</string>
@@ -712,6 +723,12 @@
     <string name="notification_new_message">New message</string>
     <string name="notification_messages_summary_title">New Telegram messages</string>
     <string name="notification_messages_summary_text">Open the app to view recent chats.</string>
+    <plurals name="notification_messages_summary_count">
+        <item quantity="one">%1$d chat with new messages</item>
+        <item quantity="other">%1$d chats with new messages</item>
+    </plurals>
+    <string name="notification_reply_label">Reply</string>
+    <string name="notification_mark_read_label">Mark read</string>
     <string name="notification_incoming_call">Incoming Telegram call</string>
     <string name="notification_incoming_voice_call">Incoming voice call</string>
     <string name="notification_incoming_video_call">Incoming video call</string>
@@ -808,9 +825,12 @@
     <string name="composer_more_actions">Open composer tools</string>
     <string name="composer_attach_photo">Photo</string>
     <string name="composer_attach_video">Video</string>
+    <string name="composer_attach_voice">Voice message</string>
+    <string name="composer_attach_video_message">Video message</string>
     <string name="composer_attach_file">File</string>
     <string name="composer_attach_album">Multiple files</string>
     <string name="composer_attach_camera">Camera</string>
+    <string name="composer_hd_photo">HD photo</string>
     <string name="composer_clear_media">Clear media</string>
     <string name="composer_media_ready" tools:ignore="PluralsCandidate">%1$d/%2$d media ready</string>
     <string name="composer_media_preview">Attached media preview</string>
@@ -829,6 +849,7 @@
     <string name="message_sync_deleted">Deleted</string>
     <string name="message_sync_edited">Edited</string>
     <string name="message_sync_pinned">Pinned</string>
+    <string name="message_upload_progress">Uploading %1$d%%</string>
     <string name="message_pinned_short">Pinned</string>
     <string name="settings_section_appearance">Appearance</string>
     <string name="theme_mode">Theme mode</string>

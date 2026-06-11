@@ -40,6 +40,16 @@ class ChatFilterLogicTest {
         assertTrue(oldMessage.matchesDateFilter(ChatDateFilter.All))
     }
 
+    @Test
+    fun matchesContentFilter_distinguishesSharedMediaKinds() {
+        assertTrue(message(kind = MessageKind.Audio).matchesContentFilter(ChatContentFilter.Audio))
+        assertTrue(message(kind = MessageKind.Voice).matchesContentFilter(ChatContentFilter.Voice))
+        assertTrue(message(kind = MessageKind.Sticker).matchesContentFilter(ChatContentFilter.Stickers))
+        assertTrue(message(kind = MessageKind.VideoNote).matchesContentFilter(ChatContentFilter.PhotosVideos))
+        assertFalse(message(kind = MessageKind.File).matchesContentFilter(ChatContentFilter.Media))
+        assertTrue(message(kind = MessageKind.File).matchesContentFilter(ChatContentFilter.Files))
+    }
+
     private fun chat(type: String): TelegramChat {
         return TelegramChat(
             id = 1L,
@@ -55,7 +65,8 @@ class ChatFilterLogicTest {
         originalText: String = "",
         translatedText: String = "",
         translationStatus: TranslationStatus = TranslationStatus.Ready,
-        receivedAtMillis: Long = System.currentTimeMillis()
+        receivedAtMillis: Long = System.currentTimeMillis(),
+        kind: MessageKind = MessageKind.Text
     ): TelegramMessage {
         return TelegramMessage(
             chatId = 1L,
@@ -67,7 +78,7 @@ class ChatFilterLogicTest {
             translatedText = translatedText,
             translationStatus = translationStatus,
             detectedLanguage = "en",
-            kind = MessageKind.Text,
+            kind = kind,
             mediaSizeMb = 0,
             timestamp = "",
             receivedAtMillis = receivedAtMillis

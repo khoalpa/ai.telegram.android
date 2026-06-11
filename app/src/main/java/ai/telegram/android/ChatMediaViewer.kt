@@ -2156,11 +2156,16 @@ internal fun TelegramMessage.hasReadableChatMediaLocalFile(): Boolean {
         ?: false
 }
 
-internal fun Context.pendingComposerMedia(uri: Uri): PendingComposerMedia {
+internal fun Context.pendingComposerMedia(
+    uri: Uri,
+    forcedKind: MessageKind? = null,
+    highQualityPhoto: Boolean = false
+): PendingComposerMedia {
     val mimeType = contentResolver.getType(uri).orEmpty()
-    val kind = when {
+    val kind = forcedKind ?: when {
         mimeType.startsWith("image/") -> MessageKind.Image
         mimeType.startsWith("video/") -> MessageKind.Video
+        mimeType.startsWith("audio/") -> MessageKind.Audio
         else -> MessageKind.File
     }
     return PendingComposerMedia(
@@ -2168,7 +2173,8 @@ internal fun Context.pendingComposerMedia(uri: Uri): PendingComposerMedia {
         kind = kind,
         displayName = contentResolver.displayName(uri)
             ?: uri.lastPathSegment?.substringAfterLast('/')
-            ?: getString(kind.composerLabelRes())
+            ?: getString(kind.composerLabelRes()),
+        highQualityPhoto = highQualityPhoto && kind == MessageKind.Image
     )
 }
 
@@ -2222,6 +2228,10 @@ internal fun MessageKind.composerIconRes(): Int {
         MessageKind.Image -> android.R.drawable.ic_menu_gallery
         MessageKind.Video -> R.drawable.ic_ai_video
         MessageKind.File -> R.drawable.ic_ai_paperclip
+        MessageKind.Voice -> android.R.drawable.ic_btn_speak_now
+        MessageKind.VideoNote -> R.drawable.ic_ai_video
+        MessageKind.Audio -> android.R.drawable.ic_media_play
+        MessageKind.Sticker -> android.R.drawable.ic_menu_gallery
         MessageKind.Text -> R.drawable.ic_ai_chat
     }
 }
@@ -2231,6 +2241,10 @@ internal fun MessageKind.composerLabelRes(): Int {
         MessageKind.Image -> R.string.media_image
         MessageKind.Video -> R.string.media_video
         MessageKind.File -> R.string.media_file
+        MessageKind.Voice -> R.string.media_voice
+        MessageKind.VideoNote -> R.string.media_video_message
+        MessageKind.Audio -> R.string.media_audio
+        MessageKind.Sticker -> R.string.media_sticker
         MessageKind.Text -> R.string.nav_chats
     }
 }
@@ -2456,6 +2470,10 @@ internal fun mediaLabel(message: TelegramMessage): String {
         MessageKind.Image -> stringResource(R.string.media_image)
         MessageKind.Video -> stringResource(R.string.media_video)
         MessageKind.File -> stringResource(R.string.media_file)
+        MessageKind.Voice -> stringResource(R.string.media_voice)
+        MessageKind.VideoNote -> stringResource(R.string.media_video_message)
+        MessageKind.Audio -> stringResource(R.string.media_audio)
+        MessageKind.Sticker -> stringResource(R.string.media_sticker)
         MessageKind.Text -> ""
     }
 }

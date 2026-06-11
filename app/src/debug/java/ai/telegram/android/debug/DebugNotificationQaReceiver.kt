@@ -54,7 +54,6 @@ class DebugNotificationQaReceiver : BroadcastReceiver() {
     }
 
     private fun ensureChannel(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val channel = NotificationChannel(
             CHANNEL_ID,
             "AI Telegram QA",

@@ -83,6 +83,96 @@ class TdLibParserTest {
     }
 
     @Test
+    fun jsonParser_marksOnlyMainListChatsAndContactsForCounts() {
+        val mainChat = JSONObject(
+            """
+            {
+              "id": 100,
+              "title": "Main chat",
+              "type": {"@type": "chatTypePrivate"},
+              "positions": [
+                {"list": {"@type": "chatListMain"}, "order": "1"}
+              ]
+            }
+            """.trimIndent()
+        )
+        val publicSearchChat = JSONObject(
+            """
+            {
+              "id": 200,
+              "title": "Public result",
+              "type": {"@type": "chatTypeSupergroup"},
+              "positions": []
+            }
+            """.trimIndent()
+        )
+        val contactUser = JSONObject(
+            """
+            {
+              "id": 7,
+              "first_name": "Linh",
+              "last_name": "Nguyen",
+              "is_contact": true
+            }
+            """.trimIndent()
+        )
+        val discoveredUser = JSONObject(
+            """
+            {
+              "id": 8,
+              "first_name": "Public",
+              "last_name": "Author"
+            }
+            """.trimIndent()
+        )
+        val parser = TdLibJsonParser(nowMillis = { 1_700_000_000_000L })
+
+        assertEquals(true, parser.parseChat(mainChat)?.isMainList)
+        assertEquals(false, parser.parseChat(publicSearchChat)?.isMainList)
+        assertEquals(true, parser.parseUser(contactUser)?.isContact)
+        assertEquals(false, parser.parseUser(discoveredUser)?.isContact)
+    }
+
+    @Test
+    fun parsers_doNotPromoteLastMessageUpdatesIntoMainList() {
+        val jsonUpdate = JSONObject(
+            """
+            {
+              "chat_id": 300,
+              "last_message": {
+                "id": 99,
+                "chat_id": 300,
+                "date": 1700000000,
+                "content": {
+                  "@type": "messageText",
+                  "text": {"text": "Public post"}
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        val jsonParsed = TdLibJsonParser(nowMillis = { 1_700_000_000_000L }).parseChatLastMessage(jsonUpdate)
+        val objectParsed = TdLibObjectParser(nowMillis = { 1_700_000_000_000L }).parseChatLastMessage(
+            ChatLastMessageUpdate(
+                chatId = 301,
+                lastMessage = TdMessage(
+                    id = 100,
+                    chatId = 301,
+                    date = 1700000000,
+                    senderId = MessageSenderChat(chatId = 301),
+                    content = MessageText(FormattedText("Object public post"))
+                )
+            )
+        )
+
+        assertNotNull(jsonParsed)
+        assertEquals(false, jsonParsed!!.isMainList)
+        assertNotNull(objectParsed)
+        assertEquals(false, objectParsed!!.isMainList)
+    }
+
+    @Test
     fun jsonParser_usesMediaKindForChatPreviewWhenMessageHasNoText() {
         val jsonChat = JSONObject(
             """
@@ -336,8 +426,14 @@ class TdLibParserTest {
     @Test
     fun commandMapper_extractsJoinAndOpenUsernames() {
         assertEquals("androiddev", TdLibCommandMapper.usernameForJoin("https://t.me/androiddev"))
+        assertEquals("androiddev", TdLibCommandMapper.usernameForJoin("https://telegram.me/androiddev/123"))
+        assertEquals("androiddev", TdLibCommandMapper.usernameForJoin("telegram.dog/androiddev"))
         assertEquals("channel_name", TdLibCommandMapper.extractTelegramUsername("https://t.me/s/channel_name?before=1"))
+        assertEquals("channel_name", TdLibCommandMapper.extractTelegramUsername("https://t.me/channel_name/42"))
+        assertEquals("channel_name", TdLibCommandMapper.extractTelegramUsername("tg://resolve?domain=channel_name"))
         assertEquals(true, TdLibCommandMapper.isInviteLink("https://t.me/+abcdef"))
+        assertEquals(true, TdLibCommandMapper.isInviteLink("https://telegram.dog/+abcdef"))
+        assertEquals(null, TdLibCommandMapper.extractTelegramUsername("https://t.me/c/123456/7"))
     }
 
     @Test
@@ -493,6 +589,155 @@ class TdLibParserTest {
         assertEquals("/tmp/story-video.mp4", objectParsed.single().mediaLocalPath)
         assertEquals(89, objectParsed.single().mediaThumbnailFileId)
         assertEquals("/tmp/story-thumb.jpg", objectParsed.single().mediaThumbnailLocalPath)
+    }
+
+    @Test
+    fun jsonParser_mapsVoiceAndVideoNoteMessages() {
+        val voiceMessage = JSONObject(
+            """
+            {
+              "id": 51,
+              "chat_id": 100,
+              "date": 1700000000,
+              "content": {
+                "@type": "messageVoiceNote",
+                "voice_note": {
+                  "voice": {
+                    "id": 501,
+                    "size": 2048,
+                    "local": {"path": "/tmp/voice.ogg"}
+                  },
+                  "mime_type": "audio/ogg"
+                },
+                "caption": {"text": "Voice caption"}
+              }
+            }
+            """.trimIndent()
+        )
+        val videoNoteMessage = JSONObject(
+            """
+            {
+              "id": 52,
+              "chat_id": 100,
+              "date": 1700000000,
+              "content": {
+                "@type": "messageVideoNote",
+                "video_note": {
+                  "video": {
+                    "id": 502,
+                    "size": 4096,
+                    "local": {"path": "/tmp/video-note.mp4"}
+                  },
+                  "thumbnail": {
+                    "file": {
+                      "id": 503,
+                      "local": {"path": "/tmp/video-note.jpg", "is_downloading_completed": true}
+                    }
+                  }
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        val parser = TdLibJsonParser(nowMillis = { 1_700_000_000_000L })
+
+        val voice = parser.parseMessage(voiceMessage)
+        val videoNote = parser.parseMessage(videoNoteMessage)
+
+        assertNotNull(voice)
+        assertEquals(MessageKind.Voice, voice!!.kind)
+        assertEquals(501, voice.mediaFileId)
+        assertEquals("/tmp/voice.ogg", voice.mediaLocalPath)
+        assertEquals("Voice caption", voice.originalText)
+        assertNotNull(videoNote)
+        assertEquals(MessageKind.VideoNote, videoNote!!.kind)
+        assertEquals(502, videoNote.mediaFileId)
+        assertEquals(503, videoNote.mediaThumbnailFileId)
+        assertEquals("/tmp/video-note.jpg", videoNote.mediaThumbnailLocalPath)
+    }
+
+    @Test
+    fun jsonParser_mapsAudioAndStickerMessages() {
+        val audioMessage = JSONObject(
+            """
+            {
+              "id": 61,
+              "chat_id": 100,
+              "date": 1700000000,
+              "content": {
+                "@type": "messageAudio",
+                "audio": {
+                  "audio": {
+                    "id": 601,
+                    "size": 8192,
+                    "local": {"path": "/tmp/song.mp3"}
+                  },
+                  "file_name": "song.mp3",
+                  "mime_type": "audio/mpeg"
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        val stickerMessage = JSONObject(
+            """
+            {
+              "id": 62,
+              "chat_id": 100,
+              "date": 1700000000,
+              "content": {
+                "@type": "messageSticker",
+                "sticker": {
+                  "sticker": {
+                    "id": 602,
+                    "size": 4096,
+                    "local": {"path": "/tmp/sticker.webp"}
+                  },
+                  "thumbnail": {
+                    "file": {
+                      "id": 603,
+                      "local": {"path": "/tmp/sticker.jpg", "is_downloading_completed": true}
+                    }
+                  },
+                  "emoji": "ok"
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        val parser = TdLibJsonParser(nowMillis = { 1_700_000_000_000L })
+
+        val audio = parser.parseMessage(audioMessage)
+        val sticker = parser.parseMessage(stickerMessage)
+
+        assertNotNull(audio)
+        assertEquals(MessageKind.Audio, audio!!.kind)
+        assertEquals(601, audio.mediaFileId)
+        assertEquals("song.mp3", audio.mediaFileName)
+        assertNotNull(sticker)
+        assertEquals(MessageKind.Sticker, sticker!!.kind)
+        assertEquals(602, sticker.mediaFileId)
+        assertEquals(603, sticker.mediaThumbnailFileId)
+    }
+
+    @Test
+    fun jsonParser_usesRemoteUploadedBytesAsTransferProgress() {
+        val fileUpdate = JSONObject(
+            """
+            {
+              "id": 700,
+              "size": 10485760,
+              "local": {"downloaded_prefix_size": 0},
+              "remote": {"uploaded_size": 5242880}
+            }
+            """.trimIndent()
+        )
+
+        val parsed = TdLibJsonParser().parseFileUpdate(fileUpdate)
+
+        assertNotNull(parsed)
+        assertEquals(700, parsed!!.id)
+        assertEquals(5L * 1024L * 1024L, parsed.downloadedPrefixBytes)
     }
 
     @Test
@@ -671,6 +916,10 @@ class TdLibParserTest {
         @JvmField val isPinned: Boolean = false
     )
 
+    private class ChatLastMessageUpdate(
+        @JvmField val chatId: Long,
+        @JvmField val lastMessage: Any?
+    )
     private class MessageSenderChat(@JvmField val chatId: Long)
     private class MessageText(@JvmField val text: FormattedText)
     private class MessagePoll(@JvmField val poll: Poll)

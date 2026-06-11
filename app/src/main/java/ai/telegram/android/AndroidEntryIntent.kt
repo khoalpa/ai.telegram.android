@@ -93,7 +93,7 @@ internal object AndroidEntryIntentPolicy {
     const val MaxSharedTextChars = 32_000
     const val MaxSharedUris = 10
     private val HttpSchemes = setOf("http", "https")
-    private val TelegramHosts = setOf("t.me", "telegram.me")
+    private val TelegramHosts = setOf("t.me", "telegram.me", "telegram.dog")
     private val SafeSharedUriSchemes = setOf("content", "file")
 
     fun sanitizeTelegramLink(raw: String): String {

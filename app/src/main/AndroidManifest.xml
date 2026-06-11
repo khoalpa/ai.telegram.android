@@ -58,6 +58,7 @@
                 <data android:scheme="http" />
                 <data android:host="t.me" />
                 <data android:host="telegram.me" />
+                <data android:host="telegram.dog" />
             </intent-filter>
             <intent-filter android:label="@string/share_to_ai_telegram">
                 <action android:name="android.intent.action.SEND" />
@@ -83,6 +84,9 @@
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
         </activity>
+        <receiver
+            android:name=".notifications.TelegramNotificationActionReceiver"
+            android:exported="false" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

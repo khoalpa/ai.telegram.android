@@ -1536,6 +1536,10 @@ private fun StoryPreviewDialog(
                             )
                         }
                         MessageKind.File,
+                        MessageKind.Voice,
+                        MessageKind.VideoNote,
+                        MessageKind.Audio,
+                        MessageKind.Sticker,
                         MessageKind.Text -> Text(stringResource(R.string.story_media_not_ready))
                     }
                 }
@@ -1557,6 +1561,10 @@ private fun MessageKind.storyKindLabel(): String {
         MessageKind.Image -> stringResource(R.string.media_image)
         MessageKind.Video -> stringResource(R.string.media_video)
         MessageKind.File -> stringResource(R.string.media_file)
+        MessageKind.Voice -> stringResource(R.string.media_voice)
+        MessageKind.VideoNote -> stringResource(R.string.media_video_message)
+        MessageKind.Audio -> stringResource(R.string.media_audio)
+        MessageKind.Sticker -> stringResource(R.string.media_sticker)
         MessageKind.Text -> stringResource(R.string.story_unsupported)
     }
 }

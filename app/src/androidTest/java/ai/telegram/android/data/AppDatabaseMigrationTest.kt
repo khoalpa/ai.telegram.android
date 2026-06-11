@@ -15,7 +15,7 @@ import org.junit.runner.RunWith
 @DeviceSafeConnectedTest
 class AppDatabaseMigrationTest {
     @Test
-    fun migratesFromVersion1To13AndPreservesMessage() {
+    fun migratesFromVersion1To14AndPreservesMessageAndMainChatList() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         context.deleteDatabase(TEST_DB)
         SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(TEST_DB), null).apply {
@@ -71,7 +71,7 @@ class AppDatabaseMigrationTest {
         }
         db.query(
             """
-            SELECT activeAction, lastReadInboxMessageId, lastReadOutboxMessageId, pinnedMessageId
+            SELECT activeAction, lastReadInboxMessageId, lastReadOutboxMessageId, pinnedMessageId, isMainList
             FROM chats WHERE id = 0
             """.trimIndent()
         ).use { cursor ->
@@ -80,6 +80,7 @@ class AppDatabaseMigrationTest {
             assertEquals(0L, cursor.getLong(1))
             assertEquals(0L, cursor.getLong(2))
             assertEquals(0L, cursor.getLong(3))
+            assertEquals(1, cursor.getInt(4))
         }
         db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='translation_jobs'").use { cursor ->
             assertEquals(true, cursor.moveToFirst())
@@ -120,6 +121,13 @@ class AppDatabaseMigrationTest {
         }
         db.query("SELECT name FROM sqlite_master WHERE type='index' AND name='index_translation_jobs_status_createdAtMillis'").use { cursor ->
             assertEquals(true, cursor.moveToFirst())
+        }
+        db.query("PRAGMA table_info(senders)").use { cursor ->
+            val columns = mutableSetOf<String>()
+            while (cursor.moveToNext()) {
+                columns += cursor.getString(1)
+            }
+            assertEquals(true, "isContact" in columns)
         }
         database.close()
         context.deleteDatabase(TEST_DB)
@@ -170,6 +178,6 @@ class AppDatabaseMigrationTest {
     }
 
     private companion object {
-        const val TEST_DB = "migration-1-13-test"
+        const val TEST_DB = "migration-1-14-test"
     }
 }

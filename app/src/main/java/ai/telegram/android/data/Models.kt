@@ -4,7 +4,11 @@ enum class MessageKind {
     Text,
     Image,
     Video,
-    File
+    File,
+    Voice,
+    VideoNote,
+    Audio,
+    Sticker
 }
 
 enum class TranslationStatus {
@@ -56,7 +60,8 @@ data class TelegramChat(
     val activeAction: String = "",
     val lastReadInboxMessageId: Long = 0L,
     val lastReadOutboxMessageId: Long = 0L,
-    val pinnedMessageId: Long = 0L
+    val pinnedMessageId: Long = 0L,
+    val isMainList: Boolean = true
 )
 
 data class TelegramMessage(
@@ -100,7 +105,8 @@ data class TelegramSender(
     val id: String,
     val displayName: String,
     val type: String,
-    val updatedAtMillis: Long
+    val updatedAtMillis: Long,
+    val isContact: Boolean = false
 )
 
 data class HiddenContent(

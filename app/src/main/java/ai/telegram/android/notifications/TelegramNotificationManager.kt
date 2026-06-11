@@ -24,6 +24,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
 
 class TelegramNotificationManager(
@@ -33,6 +34,7 @@ class TelegramNotificationManager(
     private val notificationManager = NotificationManagerCompat.from(appContext)
     private var activeIncomingCallId: Int? = null
     private var incomingCallRingtone: Ringtone? = null
+    private val activeMessageNotifications = linkedMapOf<Long, MessageNotificationSnapshot>()
 
     fun ensureMessageChannel() {
         val channel = NotificationChannel(
@@ -77,6 +79,11 @@ class TelegramNotificationManager(
             .ifBlank { appContext.getString(R.string.notification_new_message) }
         val text = message.notificationText()
         val contentIntent = openChatIntent(message.chatId)
+        activeMessageNotifications[message.chatId] = MessageNotificationSnapshot(
+            chatId = message.chatId,
+            title = title,
+            text = text
+        )
         val notification = NotificationCompat.Builder(appContext, CHANNEL_MESSAGES)
             .setSmallIcon(R.drawable.ic_ai_chat)
             .setContentTitle(title)
@@ -87,6 +94,8 @@ class TelegramNotificationManager(
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setGroup(GROUP_MESSAGES)
+            .addAction(replyAction(message.chatId))
+            .addAction(markReadAction(message.chatId))
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -155,7 +164,13 @@ class TelegramNotificationManager(
     }
 
     fun cancelChat(chatId: Long) {
+        activeMessageNotifications.remove(chatId)
         notificationManager.cancel(notificationId(chatId))
+        if (activeMessageNotifications.isEmpty()) {
+            notificationManager.cancel(MESSAGE_GROUP_SUMMARY_NOTIFICATION_ID)
+        } else {
+            notifyMessageGroupSummary()
+        }
     }
 
     private fun openChatIntent(chatId: Long): PendingIntent {
@@ -185,10 +200,27 @@ class TelegramNotificationManager(
 
     private fun notifyMessageGroupSummary() {
         if (!canPostNotifications()) return
+        val snapshots = activeMessageNotifications.values.toList()
+        val summaryText = if (snapshots.isEmpty()) {
+            appContext.getString(R.string.notification_messages_summary_text)
+        } else {
+            appContext.resources.getQuantityString(
+                R.plurals.notification_messages_summary_count,
+                snapshots.size,
+                snapshots.size
+            )
+        }
+        val inboxStyle = NotificationCompat.InboxStyle()
+            .setBigContentTitle(appContext.getString(R.string.notification_messages_summary_title))
+            .setSummaryText(summaryText)
+        snapshots.takeLast(MAX_SUMMARY_LINES).forEach { snapshot ->
+            inboxStyle.addLine("${snapshot.title}: ${snapshot.text}")
+        }
         val summary = NotificationCompat.Builder(appContext, CHANNEL_MESSAGES)
             .setSmallIcon(R.drawable.ic_ai_chat)
             .setContentTitle(appContext.getString(R.string.notification_messages_summary_title))
-            .setContentText(appContext.getString(R.string.notification_messages_summary_text))
+            .setContentText(summaryText)
+            .setStyle(inboxStyle)
             .setContentIntent(openAppIntent())
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
@@ -205,6 +237,52 @@ class TelegramNotificationManager(
             return
         }
         notificationManager.notify(MESSAGE_GROUP_SUMMARY_NOTIFICATION_ID, summary)
+    }
+
+    private fun replyAction(chatId: Long): NotificationCompat.Action {
+        val remoteInput = RemoteInput.Builder(KEY_TEXT_REPLY)
+            .setLabel(appContext.getString(R.string.notification_reply_label))
+            .build()
+        return NotificationCompat.Action.Builder(
+            R.drawable.ic_ai_chat,
+            appContext.getString(R.string.notification_reply_label),
+            actionIntent(ACTION_REPLY, chatId, mutable = true)
+        )
+            .addRemoteInput(remoteInput)
+            .setAllowGeneratedReplies(true)
+            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+            .setShowsUserInterface(false)
+            .build()
+    }
+
+    private fun markReadAction(chatId: Long): NotificationCompat.Action {
+        return NotificationCompat.Action.Builder(
+            R.drawable.ic_action_delete,
+            appContext.getString(R.string.notification_mark_read_label),
+            actionIntent(ACTION_MARK_READ, chatId, mutable = false)
+        )
+            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+            .setShowsUserInterface(false)
+            .build()
+    }
+
+    private fun actionIntent(action: String, chatId: Long, mutable: Boolean): PendingIntent {
+        val intent = Intent(appContext, TelegramNotificationActionReceiver::class.java).apply {
+            this.action = action
+            setPackage(appContext.packageName)
+            putExtra(EXTRA_ACTION_CHAT_ID, chatId)
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (mutable) {
+            PendingIntent.FLAG_MUTABLE
+        } else {
+            PendingIntent.FLAG_IMMUTABLE
+        }
+        return PendingIntent.getBroadcast(
+            appContext,
+            actionRequestCode(action, chatId),
+            intent,
+            flags
+        )
     }
 
     private fun openCallsIntent(callId: Int): PendingIntent {
@@ -263,6 +341,10 @@ class TelegramNotificationManager(
             MessageKind.Image -> appContext.getString(R.string.media_image)
             MessageKind.Video -> appContext.getString(R.string.media_video)
             MessageKind.File -> appContext.getString(R.string.media_file)
+            MessageKind.Voice -> appContext.getString(R.string.media_voice)
+            MessageKind.VideoNote -> appContext.getString(R.string.media_video_message)
+            MessageKind.Audio -> appContext.getString(R.string.media_audio)
+            MessageKind.Sticker -> appContext.getString(R.string.media_sticker)
             MessageKind.Text -> appContext.getString(R.string.no_message_preview)
         }
     }
@@ -270,11 +352,16 @@ class TelegramNotificationManager(
     companion object {
         const val EXTRA_OPEN_CHAT_ID = "ai.telegram.android.extra.OPEN_CHAT_ID"
         const val EXTRA_OPEN_CALLS = "ai.telegram.android.extra.OPEN_CALLS"
+        const val EXTRA_ACTION_CHAT_ID = "ai.telegram.android.extra.ACTION_CHAT_ID"
+        const val ACTION_REPLY = "ai.telegram.android.notification.REPLY"
+        const val ACTION_MARK_READ = "ai.telegram.android.notification.MARK_READ"
+        const val KEY_TEXT_REPLY = "ai.telegram.android.notification.TEXT_REPLY"
 
         private const val CHANNEL_MESSAGES = "telegram_messages"
         private const val CHANNEL_CALLS = "telegram_calls"
         private const val GROUP_MESSAGES = "telegram_messages"
         private const val MESSAGE_GROUP_SUMMARY_NOTIFICATION_ID = 0x061A1000
+        private const val MAX_SUMMARY_LINES = 5
 
         fun hasPostNotificationsPermission(context: Context): Boolean {
             return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
@@ -291,5 +378,15 @@ class TelegramNotificationManager(
         private fun incomingCallNotificationId(callId: Int): Int {
             return 0x0A11C000 or (callId and 0x0000FFFF)
         }
+
+        private fun actionRequestCode(action: String, chatId: Long): Int {
+            return 31 * chatId.hashCode() + action.hashCode()
+        }
     }
 }
+
+private data class MessageNotificationSnapshot(
+    val chatId: Long,
+    val title: String,
+    val text: String
+)

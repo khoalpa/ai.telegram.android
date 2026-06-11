@@ -16,6 +16,10 @@ internal enum class ChatFolderFilter(val labelRes: Int) {
 internal enum class ChatContentFilter(val labelRes: Int) {
     All(R.string.content_filter_all),
     Media(R.string.content_filter_media),
+    PhotosVideos(R.string.content_filter_photos_videos),
+    Audio(R.string.content_filter_audio),
+    Voice(R.string.content_filter_voice),
+    Stickers(R.string.content_filter_stickers),
     Files(R.string.content_filter_files),
     Links(R.string.content_filter_links)
 }
@@ -29,6 +33,10 @@ internal enum class ChatDateFilter(val labelRes: Int) {
 
 internal enum class SharedGalleryFilter(val labelRes: Int) {
     Media(R.string.content_filter_media),
+    PhotosVideos(R.string.content_filter_photos_videos),
+    Audio(R.string.content_filter_audio),
+    Voice(R.string.content_filter_voice),
+    Stickers(R.string.content_filter_stickers),
     Files(R.string.content_filter_files),
     Links(R.string.content_filter_links)
 }
@@ -42,6 +50,8 @@ internal enum class MessageListOverlayState {
 internal enum class ComposerAttachmentType(val labelRes: Int, val iconRes: Int) {
     Photo(R.string.composer_attach_photo, android.R.drawable.ic_menu_gallery),
     Video(R.string.composer_attach_video, R.drawable.ic_ai_video),
+    Voice(R.string.composer_attach_voice, android.R.drawable.ic_btn_speak_now),
+    VideoMessage(R.string.composer_attach_video_message, R.drawable.ic_ai_video),
     File(R.string.composer_attach_file, R.drawable.ic_ai_paperclip),
     Album(R.string.composer_attach_album, android.R.drawable.ic_menu_upload),
     Camera(R.string.composer_attach_camera, android.R.drawable.ic_menu_camera)
@@ -53,11 +63,12 @@ internal data class ChatSenderFilterOption(
     val count: Int
 )
 
-internal data class PendingComposerMedia(
+data class PendingComposerMedia(
     val id: String = UUID.randomUUID().toString(),
     val uri: Uri,
     val kind: MessageKind,
-    val displayName: String
+    val displayName: String,
+    val highQualityPhoto: Boolean = false
 )
 
 internal const val MIN_POLL_OPTIONS = 2

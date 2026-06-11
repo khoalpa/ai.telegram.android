@@ -10,13 +10,31 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ChatDao {
-    @Query("SELECT * FROM chats ORDER BY updatedAtMillis DESC")
+    @Query(
+        """
+        SELECT id,
+               title,
+               type,
+               unreadCount,
+               substr(lastMessagePreview, 1, 500) AS lastMessagePreview,
+               updatedAtMillis,
+               activeAction,
+               lastReadInboxMessageId,
+               lastReadOutboxMessageId,
+               pinnedMessageId,
+               isMainList
+        FROM chats
+        WHERE isMainList = 1
+        ORDER BY updatedAtMillis DESC
+        LIMIT 500
+        """
+    )
     fun observeChats(): Flow<List<ChatEntity>>
 
     @Query("SELECT * FROM chats WHERE id = :chatId LIMIT 1")
     suspend fun find(chatId: Long): ChatEntity?
 
-    @Query("SELECT COUNT(*) FROM chats")
+    @Query("SELECT COUNT(*) FROM chats WHERE isMainList = 1")
     suspend fun count(): Int
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
@@ -83,6 +101,9 @@ interface ChatDao {
 interface SenderDao {
     @Query("SELECT * FROM senders ORDER BY displayName COLLATE NOCASE ASC")
     fun observeSenders(): Flow<List<SenderEntity>>
+
+    @Query("SELECT * FROM senders WHERE isContact = 1 ORDER BY displayName COLLATE NOCASE ASC")
+    fun observeContacts(): Flow<List<SenderEntity>>
 
     @Query("SELECT * FROM senders WHERE id = :senderId LIMIT 1")
     suspend fun find(senderId: String): SenderEntity?

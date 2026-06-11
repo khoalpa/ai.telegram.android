@@ -3,19 +3,17 @@ package ai.telegram.android.data.telegram
 import java.util.Locale
 
 internal object TdLibCommandMapper {
+    private val TelegramHosts = setOf("t.me", "telegram.me", "telegram.dog")
+    private val UsernamePattern = Regex("""[A-Za-z0-9_]{5,32}""")
+
     fun isInviteLink(input: String): Boolean {
-        return input.contains("t.me/+", ignoreCase = true) ||
+        return Regex("""(?i)(?:t\.me|telegram\.me|telegram\.dog)/\+""").containsMatchIn(input) ||
             input.contains("joinchat/", ignoreCase = true) ||
             input.startsWith("tg://join", ignoreCase = true)
     }
 
     fun usernameForJoin(input: String): String? {
-        val username = input.trim()
-            .removePrefix("@")
-            .substringAfter("t.me/", input.trim())
-            .substringBefore("?")
-            .trim('/')
-        return username.takeIf { it.isNotBlank() }
+        return extractTelegramUsername(input)
     }
 
     fun extractTelegramUsername(input: String): String? {
@@ -26,12 +24,8 @@ internal object TdLibCommandMapper {
             ?.getOrNull(1)
         if (!domainFromResolve.isNullOrBlank()) return domainFromResolve
 
-        val withoutAt = clean.removePrefix("@")
-        val path = Regex("""(?i)^(?:https?://)?(?:www\.)?(?:t\.me|telegram\.me)/(.+)$""")
-            .find(withoutAt)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?: withoutAt
+        val withoutAt = clean.removePrefix("@").trim()
+        val path = telegramPathOrNull(withoutAt) ?: withoutAt
         val segments = path
             .substringBefore("?")
             .substringBefore("#")
@@ -44,6 +38,15 @@ internal object TdLibCommandMapper {
             segments.firstOrNull()
         } ?: return null
         if (username.lowercase(Locale.ROOT) in setOf("c", "joinchat", "+")) return null
-        return username.takeIf { it.matches(Regex("""[A-Za-z0-9_]{5,32}""")) }
+        return username.takeIf { it.matches(UsernamePattern) }
+    }
+
+    private fun telegramPathOrNull(input: String): String? {
+        val match = Regex("""(?i)^(?:https?://)?(?:www\.)?([^/]+)/(.+)$""")
+            .find(input)
+            ?: return null
+        val host = match.groupValues.getOrNull(1)?.lowercase(Locale.ROOT).orEmpty()
+        if (host !in TelegramHosts) return null
+        return match.groupValues.getOrNull(2)
     }
 }

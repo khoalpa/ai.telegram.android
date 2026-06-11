@@ -15,6 +15,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -174,6 +175,92 @@ class RepositoryRoomTest {
         assertEquals("", storedMessage?.translatedText)
         assertEquals("en", storedMessage?.detectedLanguage)
         assertEquals(sourceText, storedChat?.lastMessagePreview)
+    }
+
+    @Test
+    fun chatRepository_doesNotPromotePublicLinkChatsIntoMainList() = runTest {
+        val mainChat = TelegramChat(
+            id = 101,
+            title = "Main channel",
+            type = "channel",
+            unreadCount = 0,
+            lastMessagePreview = "",
+            updatedAtMillis = 1L,
+            isMainList = true
+        )
+        val publicLinkChat = TelegramChat(
+            id = 202,
+            title = "Public link result",
+            type = "channel",
+            unreadCount = 0,
+            lastMessagePreview = "",
+            updatedAtMillis = 2L,
+            isMainList = false
+        )
+        val publicLastMessageUpdate = publicLinkChat.copy(
+            title = "",
+            lastMessagePreview = "Latest public post",
+            updatedAtMillis = 3L,
+            isMainList = false
+        )
+        val mainLastMessageUpdate = mainChat.copy(
+            title = "",
+            lastMessagePreview = "Latest main post",
+            updatedAtMillis = 4L,
+            isMainList = false
+        )
+        val previouslyPromotedPublicChat = TelegramChat(
+            id = 303,
+            title = "Previously promoted public result",
+            type = "channel",
+            unreadCount = 0,
+            lastMessagePreview = "",
+            updatedAtMillis = 5L,
+            isMainList = true
+        )
+        val authoritativePublicUpdate = previouslyPromotedPublicChat.copy(
+            updatedAtMillis = 6L,
+            isMainList = false
+        )
+
+        chatRepository.upsert(mainChat)
+        chatRepository.upsert(publicLinkChat)
+        chatRepository.upsert(publicLastMessageUpdate)
+        chatRepository.upsert(mainLastMessageUpdate)
+        chatRepository.upsert(previouslyPromotedPublicChat)
+        chatRepository.upsert(authoritativePublicUpdate)
+
+        val visibleChats = chatRepository.observeChats().first()
+
+        assertEquals(1, visibleChats.size)
+        assertEquals(mainChat.id, visibleChats.single().id)
+        assertEquals("Latest main post", visibleChats.single().lastMessagePreview)
+        assertEquals(1, database.chatDao().count())
+        assertEquals(false, database.chatDao().find(publicLinkChat.id)?.isMainList)
+        assertEquals(false, database.chatDao().find(previouslyPromotedPublicChat.id)?.isMainList)
+    }
+
+    @Test
+    fun chatRepository_truncatesLongChatPreviewsBeforeStorage() = runTest {
+        val longPreview = "A".repeat(2_000)
+        val chat = TelegramChat(
+            id = 404,
+            title = "Large preview chat",
+            type = "channel",
+            unreadCount = 0,
+            lastMessagePreview = longPreview,
+            updatedAtMillis = 1L,
+            isMainList = true
+        )
+
+        chatRepository.upsert(chat)
+        chatRepository.touchLastMessage(chat.id, longPreview)
+
+        val stored = database.chatDao().find(chat.id)
+        val visible = chatRepository.observeChats().first().single { it.id == chat.id }
+
+        assertEquals(500, stored?.lastMessagePreview?.length)
+        assertEquals(500, visible.lastMessagePreview.length)
     }
 
     @Test

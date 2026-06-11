@@ -66,7 +66,8 @@ internal class TdLibJsonParser(
             type = type,
             unreadCount = chat.optInt("unread_count", 0),
             lastMessagePreview = lastMessage.previewText(),
-            updatedAtMillis = nowMillis()
+            updatedAtMillis = nowMillis(),
+            isMainList = chat.isInMainChatList()
         )
     }
 
@@ -79,7 +80,8 @@ internal class TdLibJsonParser(
             type = "chat",
             unreadCount = 0,
             lastMessagePreview = lastMessage.previewText(),
-            updatedAtMillis = nowMillis()
+            updatedAtMillis = nowMillis(),
+            isMainList = false
         )
     }
 
@@ -134,7 +136,8 @@ internal class TdLibJsonParser(
             id = "user:$id",
             displayName = displayName,
             type = "user",
-            updatedAtMillis = nowMillis()
+            updatedAtMillis = nowMillis(),
+            isContact = user.optBoolean("is_contact", user.optBoolean("isContact", false))
         )
     }
 
@@ -158,7 +161,7 @@ internal class TdLibJsonParser(
             id = fileId,
             localPath = file.localPath(),
             sizeMb = tdLibBytesToMb(file.optLongAny("size", "expected_size")),
-            downloadedPrefixBytes = file.localDownloadedPrefixBytes()
+            downloadedPrefixBytes = file.transferProgressBytes()
         )
     }
 
@@ -598,6 +601,56 @@ internal class TdLibJsonParser(
                     fileName = document?.optString("file_name", "").orEmpty()
                 )
             }
+            "messageAudio" -> {
+                val audio = content.optJSONObject("audio")
+                val thumbnailFile = audio
+                    ?.optJSONObject("album_cover_thumbnail")
+                    ?.let { thumbnail -> thumbnail.optFileObject("file", "photo") ?: thumbnail.findJsonFile() }
+                parsedFile(
+                    kind = MessageKind.Audio,
+                    file = audio?.optFileObject("audio", "file") ?: audio.findJsonFile(),
+                    thumbnailFile = thumbnailFile,
+                    mimeType = audio?.optString("mime_type", "").orEmpty().ifBlank { "audio/mpeg" },
+                    fileName = audio?.optString("file_name", "").orEmpty()
+                )
+            }
+            "messageVoiceNote" -> {
+                val voiceNote = content.optJSONObject("voice_note")
+                parsedFile(
+                    kind = MessageKind.Voice,
+                    file = voiceNote?.optFileObject("voice", "voice_note", "file") ?: voiceNote.findJsonFile(),
+                    mimeType = voiceNote?.optString("mime_type", "").orEmpty().ifBlank { "audio/ogg" },
+                    fileName = voiceNote?.optString("file_name", "").orEmpty()
+                )
+            }
+            "messageVideoNote" -> {
+                val videoNote = content.optJSONObject("video_note")
+                val thumbnailFile = videoNote
+                    ?.optJSONObject("thumbnail")
+                    ?.let { thumbnail -> thumbnail.optFileObject("file", "photo") ?: thumbnail.findJsonFile() }
+                parsedFile(
+                    kind = MessageKind.VideoNote,
+                    file = videoNote?.optFileObject("video", "video_note", "file") ?: videoNote.findJsonFile(),
+                    thumbnailFile = thumbnailFile,
+                    mimeType = videoNote?.optString("mime_type", "").orEmpty().ifBlank { "video/mp4" },
+                    fileName = videoNote?.optString("file_name", "").orEmpty()
+                )
+            }
+            "messageSticker" -> {
+                val sticker = content.optJSONObject("sticker")
+                val thumbnailFile = sticker
+                    ?.optJSONObject("thumbnail")
+                    ?.let { thumbnail -> thumbnail.optFileObject("file", "photo") ?: thumbnail.findJsonFile() }
+                parsedFile(
+                    kind = MessageKind.Sticker,
+                    file = sticker?.optFileObject("sticker", "file") ?: sticker.findJsonFile(),
+                    thumbnailFile = thumbnailFile,
+                    mimeType = sticker?.optString("mime_type", "").orEmpty(),
+                    fileName = sticker?.optString("emoji", "").orEmpty().ifBlank {
+                        sticker?.optString("set_id", "").orEmpty()
+                    }
+                )
+            }
             else -> TdLibParsedMedia(MessageKind.Text)
         }
     }
@@ -615,6 +668,10 @@ internal class TdLibJsonParser(
             MessageKind.Image -> "Image"
             MessageKind.Video -> "Video"
             MessageKind.File -> "File"
+            MessageKind.Voice -> "Voice"
+            MessageKind.VideoNote -> "Video message"
+            MessageKind.Audio -> "Audio"
+            MessageKind.Sticker -> "Sticker"
             MessageKind.Text -> ""
         }
     }
@@ -635,7 +692,7 @@ internal class TdLibJsonParser(
             fileName = fileName,
             thumbnailFileId = thumbnailFile?.optIntAny("id", "file_id") ?: 0,
             thumbnailLocalPath = thumbnailFile?.localPath()?.takeIf { thumbnailFile.localDownloadCompleted() }.orEmpty(),
-            downloadedPrefixBytes = file?.localDownloadedPrefixBytes() ?: 0L,
+            downloadedPrefixBytes = file?.transferProgressBytes() ?: 0L,
             sizeMb = tdLibBytesToMb(sizeBytes)
         )
     }
@@ -656,6 +713,13 @@ private inline fun JSONArray?.ifNull(block: () -> JSONArray?): JSONArray? = this
 private fun JSONArray?.objectItems(): List<JSONObject> {
     if (this == null) return emptyList()
     return (0 until length()).mapNotNull { index -> optJSONObject(index) }
+}
+
+private fun JSONObject.isInMainChatList(): Boolean {
+    val positions = optJSONArray("positions") ?: return false
+    return positions.objectItems().any { position ->
+        position.optJSONObject("list")?.optString("@type") == "chatListMain"
+    }
 }
 
 private fun JSONArray?.stringList(): List<String> {
@@ -753,6 +817,14 @@ internal fun JSONObject.localPath(): String {
 
 internal fun JSONObject.localDownloadedPrefixBytes(): Long {
     return optJSONObject("local")?.optLongAny("downloaded_prefix_size", "downloaded_size") ?: 0L
+}
+
+internal fun JSONObject.remoteUploadedBytes(): Long {
+    return optJSONObject("remote")?.optLongAny("uploaded_size", "uploadedSize") ?: 0L
+}
+
+internal fun JSONObject.transferProgressBytes(): Long {
+    return maxOf(localDownloadedPrefixBytes(), remoteUploadedBytes())
 }
 
 internal fun JSONObject.localDownloadCompleted(): Boolean {

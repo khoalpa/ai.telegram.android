@@ -18,6 +18,28 @@ data class MessageSendOptions(
         get() = scheduledAtEpochSeconds > 0
 }
 
+data class MediaSendOptions(
+    val highQualityPhoto: Boolean = false
+)
+
+data class TelegramOutgoingMedia(
+    val localPath: String,
+    val kind: MessageKind,
+    val caption: String = "",
+    val mediaOptions: MediaSendOptions = MediaSendOptions()
+)
+
+enum class TelegramMessageSearchFilter {
+    Empty,
+    PhotoVideo,
+    Document,
+    Url,
+    Audio,
+    Voice,
+    VideoNote,
+    Sticker
+}
+
 data class TelegramReadStateUpdate(
     val chatId: Long,
     val lastReadMessageId: Long,
@@ -268,12 +290,26 @@ interface TelegramClient {
     fun checkPassword(password: String)
     fun resendAuthenticationCode()
     fun logOut()
+    fun registerDeviceForPush(token: String, encrypt: Boolean = true)
     fun loadMainChatList(limit: Int = 100)
     fun loadChat(chatId: Long)
     fun loadChatHistory(chatId: Long, fromMessageId: Long = 0, limit: Int = 100)
     fun loadContacts(limit: Int = 200)
     fun searchChats(query: String, limit: Int = 50)
     fun searchPublicChats(query: String)
+    fun searchChatMessages(
+        chatId: Long,
+        query: String,
+        filter: TelegramMessageSearchFilter = TelegramMessageSearchFilter.Empty,
+        fromMessageId: Long = 0L,
+        limit: Int = 50
+    )
+    fun searchPublicPosts(
+        query: String,
+        filter: TelegramMessageSearchFilter = TelegramMessageSearchFilter.Empty,
+        offset: String = "",
+        limit: Int = 50
+    )
     fun joinChannel(usernameOrLink: String)
     fun openTelegramLink(link: String)
     fun sendTextMessage(chatId: Long, text: String, options: MessageSendOptions = MessageSendOptions())
@@ -288,6 +324,12 @@ interface TelegramClient {
         localPath: String,
         kind: MessageKind,
         caption: String = "",
+        options: MessageSendOptions = MessageSendOptions(),
+        mediaOptions: MediaSendOptions = MediaSendOptions()
+    )
+    fun sendMediaAlbum(
+        chatId: Long,
+        media: List<TelegramOutgoingMedia>,
         options: MessageSendOptions = MessageSendOptions()
     )
     fun sendPollMessage(
@@ -309,6 +351,7 @@ interface TelegramClient {
     fun editTextMessage(chatId: Long, messageId: Long, text: String)
     fun deleteMessages(chatId: Long, messageIds: List<Long>, revoke: Boolean = true)
     fun forwardMessages(toChatId: Long, fromChatId: Long, messageIds: List<Long>)
+    fun resendMessages(chatId: Long, messageIds: List<Long>)
     fun pinMessage(chatId: Long, messageId: Long, disableNotification: Boolean = true, onlyForSelf: Boolean = false)
     fun unpinMessage(chatId: Long, messageId: Long)
     fun unpinAllChatMessages(chatId: Long)

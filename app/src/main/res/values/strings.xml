@@ -36,6 +36,7 @@
     <string name="chat_search_result_count" tools:ignore="PluralsCandidate">%1$d/%2$d ket qua</string>
     <string name="chat_search_previous">Ket qua truoc</string>
     <string name="chat_search_next">Ket qua tiep theo</string>
+    <string name="chat_search_public_posts">Tim bai public</string>
     <string name="chat_message_count" tools:ignore="PluralsCandidate">%1$d bai</string>
     <string name="jump_to_first_message">Den bai dau</string>
     <string name="jump_to_last_message">Den bai cuoi</string>
@@ -371,6 +372,8 @@
     <string name="profile_members_notifications_status">Profile/contact sync dùng getUser/getChat/getContacts; member/admin và push notification cần thêm quyền, schema và kiểm thử thiết bị thật.</string>
     <string name="directory_summary" tools:ignore="PluralsCandidate">%1$d chat • %2$d kênh • %3$d nhóm • %4$d contact</string>
     <string name="telegram_action_search_requested">Đã gửi yêu cầu tìm kiếm Telegram.</string>
+    <string name="telegram_action_search_messages_requested">Da gui yeu cau tim full-history.</string>
+    <string name="telegram_action_search_public_posts_requested">Da gui yeu cau tim bai public.</string>
     <string name="telegram_action_join_requested">Đã gửi yêu cầu join kênh/link.</string>
     <string name="telegram_action_contacts_requested">Đã gửi yêu cầu đồng bộ danh bạ Telegram.</string>
     <string name="telegram_action_send_message_requested">Đã gửi yêu cầu gửi tin nhắn.</string>
@@ -456,14 +459,18 @@
     <string name="telegram_action_reaction_requested">Da gui yeu cau tha reaction.</string>
     <string name="telegram_action_send_media_requested">Da gui yeu cau gui media.</string>
     <string name="telegram_action_send_media_failed">Khong gui duoc media: %1$s</string>
+    <string name="telegram_action_resend_requested">Da gui yeu cau gui lai tin nhan.</string>
     <string name="telegram_action_send_poll_requested">Da gui yeu cau tao poll.</string>
     <string name="telegram_action_send_contact_requested">Da gui yeu cau gui lien he.</string>
     <string name="composer_more_actions">Mo cong cu soan tin</string>
     <string name="composer_attach_photo">Anh</string>
     <string name="composer_attach_video">Video</string>
+    <string name="composer_attach_voice">Voice message</string>
+    <string name="composer_attach_video_message">Video message</string>
     <string name="composer_attach_file">Tep</string>
     <string name="composer_attach_album">Album nhieu tep</string>
     <string name="composer_attach_camera">Chup anh</string>
+    <string name="composer_hd_photo">Anh HD</string>
     <string name="composer_clear_media">Xoa media</string>
     <string name="composer_media_ready" tools:ignore="PluralsCandidate">%1$d/%2$d media san sang</string>
     <string name="composer_media_preview">Xem truoc media dinh kem</string>
@@ -478,6 +485,10 @@
     <string name="send_contact">Gui lien he</string>
     <string name="content_filter_all">Tat ca</string>
     <string name="content_filter_media">Media</string>
+    <string name="content_filter_photos_videos">Anh &amp; video</string>
+    <string name="content_filter_audio">Audio</string>
+    <string name="content_filter_voice">Voice</string>
+    <string name="content_filter_stickers">Sticker</string>
     <string name="content_filter_files">Tep</string>
     <string name="content_filter_links">Link</string>
     <string name="date_filter_all">Moi luc</string>
@@ -507,6 +518,7 @@
     <string name="cancel_reply">Huy tra loi</string>
     <string name="forward_message">Chuyen tiep</string>
     <string name="forward_chat_id_hint">Chat ID dich</string>
+    <string name="resend_message">Gui lai</string>
     <string name="pin_message">Ghim tin nhan</string>
     <string name="unpin_message">Bo ghim tin nhan</string>
     <string name="edit_message">Sua tin nhan</string>
@@ -521,6 +533,7 @@
     <string name="message_action_edit_requested">Da gui yeu cau sua.</string>
     <string name="message_action_delete_requested">Da gui yeu cau xoa.</string>
     <string name="message_action_reaction_requested">Da gui yeu cau reaction.</string>
+    <string name="message_action_resend_requested">Da gui yeu cau gui lai.</string>
     <string name="translation_retry_requested">Dang thu dich lai.</string>
     <string name="retry_translation">Thu dich lai</string>
     <string name="translation_retry_generic_hint">Ban dich hien chua kha dung. Co the thu lai de dua tin nhan vao hang doi dich nen.</string>
@@ -535,10 +548,10 @@
     <string name="message_sync_deleted">Da xoa</string>
     <string name="message_sync_edited">Da sua</string>
     <string name="message_sync_pinned">Da ghim</string>
+    <string name="message_upload_progress">Dang tai len %1$d%%</string>
     <string name="message_pinned_short">Ghim</string>
     <string name="translated_only">Chỉ hiển thị bản dịch</string>
     <string name="translation_pending">Đang dịch&#8230;</string>
-    <string name="translation_ready">Đã dịch sang Tiếng Việt</string>
     <string name="translation_failed">Chưa có bản dịch khả dụng</string>
     <string name="translation_hidden">Đã ẩn theo blacklist</string>
     <string name="hide_same_content">Ẩn nội dung này</string>
@@ -553,6 +566,10 @@
     <string name="media_image">Ảnh</string>
     <string name="media_video">Video</string>
     <string name="media_file">Tệp</string>
+    <string name="media_voice">Voice</string>
+    <string name="media_video_message">Video message</string>
+    <string name="media_audio">Audio</string>
+    <string name="media_sticker">Sticker</string>
     <string name="media_image_content_description">Ảnh trong tin nhắn</string>
     <string name="close_media_viewer">Đóng media</string>
     <string name="previous_media">Media tr&#432;&#7899;c</string>
@@ -576,7 +593,6 @@
     <string name="video_subtitles">Phụ đề video toàn màn hình</string>
     <string name="video_subtitles_generating">&#272;ang nghe &#226;m g&#7889;c v&#224; t&#7841;o ph&#7909; &#273;&#7873;&#8230;</string>
     <string name="video_subtitles_translating">&#272;ang t&#7841;o ph&#7909; &#273;&#7873; ti&#7871;ng Vi&#7879;t t&#7915; transcript g&#7889;c&#8230;</string>
-    <string name="video_subtitles_unavailable">Chưa tạo được phụ đề: %1$s</string>
     <string name="video_subtitles_permission_required">Cần quyền nhận dạng giọng nói/âm thanh để tạo phụ đề từ audio video.</string>
     <string name="video_subtitle_mode_source">G&#7889;c</string>
     <string name="video_subtitle_mode_vietnamese">Ti&#7871;ng Vi&#7879;t</string>
@@ -698,6 +714,12 @@
     <string name="notification_new_message">Tin nh&#7855;n m&#7899;i</string>
     <string name="notification_messages_summary_title">Tin nh&#7855;n Telegram m&#7899;i</string>
     <string name="notification_messages_summary_text">M&#7903; app &#273;&#7875; xem c&#225;c chat m&#7899;i.</string>
+    <plurals name="notification_messages_summary_count">
+        <item quantity="one">%1$d chat co tin nhan moi</item>
+        <item quantity="other">%1$d chat co tin nhan moi</item>
+    </plurals>
+    <string name="notification_reply_label">Tra loi</string>
+    <string name="notification_mark_read_label">Da doc</string>
     <string name="notification_incoming_call">Cu&#7897;c g&#7885;i Telegram &#273;&#7871;n</string>
     <string name="notification_incoming_voice_call">Cu&#7897;c g&#7885;i tho&#7841;i &#273;&#7871;n</string>
     <string name="notification_incoming_video_call">Cu&#7897;c g&#7885;i video &#273;&#7871;n</string>
@@ -753,7 +775,6 @@
         <item quantity="one">%1$d ch&#432;a &#273;&#7885;c</item>
         <item quantity="other">%1$d ch&#432;a &#273;&#7885;c</item>
     </plurals>
-    <string name="message_meta">%1$s &#8226; %2$s</string>
     <string name="inline_separator"> &#8226; </string>
     <string name="media_generic">media</string>
     <string name="translation_cache_metric" tools:ignore="PluralsCandidate">%1$d m&#7909;c &#8226; %2$d MB</string>

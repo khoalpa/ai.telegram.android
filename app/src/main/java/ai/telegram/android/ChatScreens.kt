@@ -30,6 +30,7 @@ import ai.telegram.android.data.translation.VideoSubtitleMode
 import ai.telegram.android.data.translation.VideoSubtitleResult
 import ai.telegram.android.data.telegram.MessageSendOptions
 import ai.telegram.android.data.telegram.TdLibStatus
+import ai.telegram.android.data.telegram.TelegramMessageSearchFilter
 import ai.telegram.android.ui.AiTelegramTheme
 import ai.telegram.android.ui.AiThemeTokens
 import ai.telegram.android.ui.ChatMessageVisibilityPolicy
@@ -155,7 +156,6 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import java.io.File
-import java.util.Locale
 import java.util.UUID
 import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
@@ -163,12 +163,16 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 
 @Composable
 fun ChatScreen(
     chats: List<TelegramChat>,
     selectedChatId: Long?,
+    selectedChatOverride: TelegramChat? = null,
     messages: List<TelegramMessage>,
     pendingSharedText: String = "",
     pendingSharedUris: List<Uri> = emptyList(),
@@ -185,7 +189,8 @@ fun ChatScreen(
     onOpenCache: () -> Unit,
     onSendMessage: (Long, String, MessageSendOptions) -> Unit,
     onSendReplyMessage: (Long, Long, String, MessageSendOptions) -> Unit,
-    onSendMedia: (Long, Uri, String, MessageSendOptions) -> Unit,
+    onSendMedia: (Long, PendingComposerMedia, String, MessageSendOptions) -> Unit,
+    onSendMediaAlbum: (Long, List<PendingComposerMedia>, String, MessageSendOptions) -> Unit,
     onSendPoll: (Long, String, List<String>, Boolean, Boolean, MessageSendOptions) -> Unit,
     onSendContact: (Long, String, String, String, MessageSendOptions) -> Unit,
     onSetDraft: (Long, String) -> Unit,
@@ -195,10 +200,13 @@ fun ChatScreen(
     onForwardMessage: (TelegramMessage, Long) -> Unit,
     onDeleteMessages: (Long, List<Long>) -> Unit,
     onForwardMessages: (Long, List<Long>, Long) -> Unit,
+    onResendMessage: (TelegramMessage) -> Unit,
     onPinMessage: (TelegramMessage) -> Unit,
     onUnpinMessage: (TelegramMessage) -> Unit,
     onReactToMessage: (TelegramMessage, String) -> Unit,
     onLoadOlderMessages: (Long, Long) -> Unit,
+    onSearchChatMessages: (Long, String, TelegramMessageSearchFilter) -> Unit,
+    onSearchPublicPosts: (String, TelegramMessageSearchFilter) -> Unit,
     onRefreshChats: () -> Unit,
     onOpenTelegramLink: (String) -> Unit,
     onDownloadMedia: (Int, MessageKind) -> Unit,
@@ -211,6 +219,7 @@ fun ChatScreen(
     TelegramLikeChatScreen(
         chats = chats,
         selectedChatId = selectedChatId,
+        selectedChatOverride = selectedChatOverride,
         messages = messages,
         pendingSharedText = pendingSharedText,
         pendingSharedUris = pendingSharedUris,
@@ -228,6 +237,7 @@ fun ChatScreen(
         onSendMessage = onSendMessage,
         onSendReplyMessage = onSendReplyMessage,
         onSendMedia = onSendMedia,
+        onSendMediaAlbum = onSendMediaAlbum,
         onSendPoll = onSendPoll,
         onSendContact = onSendContact,
         onSetDraft = onSetDraft,
@@ -237,10 +247,13 @@ fun ChatScreen(
         onForwardMessage = onForwardMessage,
         onDeleteMessages = onDeleteMessages,
         onForwardMessages = onForwardMessages,
+        onResendMessage = onResendMessage,
         onPinMessage = onPinMessage,
         onUnpinMessage = onUnpinMessage,
         onReactToMessage = onReactToMessage,
         onLoadOlderMessages = onLoadOlderMessages,
+        onSearchChatMessages = onSearchChatMessages,
+        onSearchPublicPosts = onSearchPublicPosts,
         onRefreshChats = onRefreshChats,
         onOpenTelegramLink = onOpenTelegramLink,
         onDownloadMedia = onDownloadMedia,
@@ -256,6 +269,7 @@ fun ChatScreen(
 private fun TelegramLikeChatScreen(
     chats: List<TelegramChat>,
     selectedChatId: Long?,
+    selectedChatOverride: TelegramChat?,
     messages: List<TelegramMessage>,
     pendingSharedText: String,
     pendingSharedUris: List<Uri>,
@@ -272,7 +286,8 @@ private fun TelegramLikeChatScreen(
     onOpenCache: () -> Unit,
     onSendMessage: (Long, String, MessageSendOptions) -> Unit,
     onSendReplyMessage: (Long, Long, String, MessageSendOptions) -> Unit,
-    onSendMedia: (Long, Uri, String, MessageSendOptions) -> Unit,
+    onSendMedia: (Long, PendingComposerMedia, String, MessageSendOptions) -> Unit,
+    onSendMediaAlbum: (Long, List<PendingComposerMedia>, String, MessageSendOptions) -> Unit,
     onSendPoll: (Long, String, List<String>, Boolean, Boolean, MessageSendOptions) -> Unit,
     onSendContact: (Long, String, String, String, MessageSendOptions) -> Unit,
     onSetDraft: (Long, String) -> Unit,
@@ -282,10 +297,13 @@ private fun TelegramLikeChatScreen(
     onForwardMessage: (TelegramMessage, Long) -> Unit,
     onDeleteMessages: (Long, List<Long>) -> Unit,
     onForwardMessages: (Long, List<Long>, Long) -> Unit,
+    onResendMessage: (TelegramMessage) -> Unit,
     onPinMessage: (TelegramMessage) -> Unit,
     onUnpinMessage: (TelegramMessage) -> Unit,
     onReactToMessage: (TelegramMessage, String) -> Unit,
     onLoadOlderMessages: (Long, Long) -> Unit,
+    onSearchChatMessages: (Long, String, TelegramMessageSearchFilter) -> Unit,
+    onSearchPublicPosts: (String, TelegramMessageSearchFilter) -> Unit,
     onRefreshChats: () -> Unit,
     onOpenTelegramLink: (String) -> Unit,
     onDownloadMedia: (Int, MessageKind) -> Unit,
@@ -307,6 +325,7 @@ private fun TelegramLikeChatScreen(
     var silentSend by rememberSaveable(selectedChatId) { mutableStateOf(false) }
     var scheduledSend by rememberSaveable(selectedChatId) { mutableStateOf(false) }
     var scheduleDelayMinutes by rememberSaveable(selectedChatId) { mutableStateOf("30") }
+    var highQualityPhotos by rememberSaveable(selectedChatId) { mutableStateOf(false) }
     var selectedMessageKeys by remember(selectedChatId) { mutableStateOf<Set<String>>(emptySet()) }
     var bulkForwardDialogOpen by remember(selectedChatId) { mutableStateOf(false) }
     var bulkForwardChatId by remember(selectedChatId) { mutableStateOf("") }
@@ -324,6 +343,7 @@ private fun TelegramLikeChatScreen(
     var pendingCameraUri by remember(selectedChatId) { mutableStateOf<Uri?>(null) }
     var activeVideoKey by rememberSaveable(selectedChatId) { mutableStateOf<String?>(null) }
     val selectedChat = chats.firstOrNull { it.id == selectedChatId }
+        ?: selectedChatOverride?.takeIf { it.id == selectedChatId }
     val currentSendOptions = remember(silentSend, scheduledSend, scheduleDelayMinutes) {
         val cleanDelayMinutes = scheduleDelayMinutes.toIntOrNull()?.coerceIn(1, 365 * 24 * 60) ?: 0
         val scheduledAt = if (scheduledSend && cleanDelayMinutes > 0) {
@@ -342,25 +362,41 @@ private fun TelegramLikeChatScreen(
     val context = LocalContext.current
     val resources = LocalResources.current
     val clipboardScope = rememberCoroutineScope()
-    val appendPendingMedia: (List<Uri>) -> Unit = { uris ->
+    fun appendPendingMedia(
+        uris: List<Uri>,
+        forcedKind: MessageKind? = null,
+        highQualityPhoto: Boolean = false
+    ) {
         val remainingSlots = (MAX_COMPOSER_MEDIA - pendingMedia.size).coerceAtLeast(0)
         if (remainingSlots > 0) {
             pendingMedia = pendingMedia + uris
                 .take(remainingSlots)
-                .map { uri -> context.pendingComposerMedia(uri) }
+                .map { uri ->
+                    context.pendingComposerMedia(
+                        uri = uri,
+                        forcedKind = forcedKind,
+                        highQualityPhoto = highQualityPhoto
+                    )
+                }
         }
     }
     val photoPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { appendPendingMedia(listOf(it)) }
+        uri?.let { appendPendingMedia(listOf(it), highQualityPhoto = highQualityPhotos) }
     }
     val videoPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { appendPendingMedia(listOf(it)) }
+    }
+    val voicePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { appendPendingMedia(listOf(it), forcedKind = MessageKind.Voice) }
+    }
+    val videoMessagePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { appendPendingMedia(listOf(it), forcedKind = MessageKind.VideoNote) }
     }
     val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { appendPendingMedia(listOf(it)) }
     }
     val albumPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
-        appendPendingMedia(uris)
+        appendPendingMedia(uris, highQualityPhoto = highQualityPhotos)
     }
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captured ->
         val uri = pendingCameraUri
@@ -368,7 +404,8 @@ private fun TelegramLikeChatScreen(
             pendingMedia = pendingMedia + PendingComposerMedia(
                 uri = uri,
                 kind = MessageKind.Image,
-                displayName = resources.getString(R.string.composer_camera_photo_name)
+                displayName = resources.getString(R.string.composer_camera_photo_name),
+                highQualityPhoto = highQualityPhotos
             )
         }
         pendingCameraUri = null
@@ -436,6 +473,9 @@ private fun TelegramLikeChatScreen(
     }
 
     val normalizedMessageQuery = query.trim()
+    val activeMessageSearchFilter = remember(chatContentFilter) {
+        chatContentFilter.toTelegramMessageSearchFilter()
+    }
     var displayedMessages by remember(selectedChat.id) { mutableStateOf(messages) }
     var showMessageSkeleton by remember(selectedChat.id) { mutableStateOf(messages.isEmpty()) }
     LaunchedEffect(selectedChat.id, messages) {
@@ -510,7 +550,7 @@ private fun TelegramLikeChatScreen(
         visibleMessages.filter { it.kind != MessageKind.Text }
     }
     val galleryMediaMessages = remember(dateFilteredMessages) {
-        dateFilteredMessages.filter { it.kind == MessageKind.Image || it.kind == MessageKind.Video }
+        dateFilteredMessages.filter { it.isSharedMediaKind() }
     }
     val selectedMessages = remember(visibleMessages, selectedMessageKeys) {
         visibleMessages.filter { message -> message.selectionKey() in selectedMessageKeys }
@@ -578,6 +618,12 @@ private fun TelegramLikeChatScreen(
         if (shouldLoadOlderMessages && oldestMessageId > 0L) {
             onLoadOlderMessages(selectedChat.id, oldestMessageId)
         }
+    }
+
+    LaunchedEffect(selectedChat.id, normalizedMessageQuery, activeMessageSearchFilter) {
+        if (normalizedMessageQuery.isBlank()) return@LaunchedEffect
+        delay(650)
+        onSearchChatMessages(selectedChat.id, normalizedMessageQuery, activeMessageSearchFilter)
     }
 
     LaunchedEffect(
@@ -957,6 +1003,9 @@ private fun TelegramLikeChatScreen(
                             ChatSearchNavigationRow(
                                 current = if (searchResultIndexes.isEmpty()) 0 else activeSearchResult + 1,
                                 total = searchResultIndexes.size,
+                                onSearchPublicPosts = {
+                                    onSearchPublicPosts(normalizedMessageQuery, activeMessageSearchFilter)
+                                },
                                 onPrevious = {
                                     if (searchResultIndexes.isNotEmpty()) {
                                         val nextResult = if (activeSearchResult <= 0) {
@@ -1064,6 +1113,7 @@ private fun TelegramLikeChatScreen(
                             onEdit = { replacementText -> onEditMessage(message, replacementText) },
                             onDelete = { onDeleteMessage(message) },
                             onForward = { targetChatId -> onForwardMessage(message, targetChatId) },
+                            onResend = { onResendMessage(message) },
                             onPin = { onPinMessage(message) },
                             onUnpin = { onUnpinMessage(message) },
                             onReact = { emoji -> onReactToMessage(message, emoji) },
@@ -1127,6 +1177,8 @@ private fun TelegramLikeChatScreen(
                         onScheduleDelayMinutesChange = { value ->
                             scheduleDelayMinutes = value.filter { it.isDigit() }.take(6)
                         },
+                        highQualityPhotos = highQualityPhotos,
+                        onHighQualityPhotosChange = { highQualityPhotos = it },
                         pendingMedia = pendingMedia,
                         onRemovePendingMedia = { mediaId ->
                             pendingMedia = pendingMedia.filterNot { it.id == mediaId }
@@ -1134,6 +1186,8 @@ private fun TelegramLikeChatScreen(
                         onClearPendingMedia = { pendingMedia = emptyList() },
                         onAttachPhoto = { photoPickerLauncher.launch("image/*") },
                         onAttachVideo = { videoPickerLauncher.launch("video/*") },
+                        onAttachVoice = { voicePickerLauncher.launch("audio/*") },
+                        onAttachVideoMessage = { videoMessagePickerLauncher.launch("video/*") },
                         onAttachFile = { filePickerLauncher.launch("*/*") },
                         onAttachAlbum = { albumPickerLauncher.launch("*/*") },
                         onCapturePhoto = {
@@ -1148,13 +1202,18 @@ private fun TelegramLikeChatScreen(
                         onSend = {
                             val caption = draftMessage
                             if (pendingMedia.isNotEmpty()) {
-                                pendingMedia.forEachIndexed { index, media ->
-                                    onSendMedia(
-                                        selectedChat.id,
-                                        media.uri,
-                                        if (index == 0) caption else "",
-                                        currentSendOptions
-                                    )
+                                val mediaAlbum = pendingMedia.filter { it.kind == MessageKind.Image || it.kind == MessageKind.Video }
+                                if (mediaAlbum.size == pendingMedia.size && pendingMedia.size > 1) {
+                                    onSendMediaAlbum(selectedChat.id, pendingMedia, caption, currentSendOptions)
+                                } else {
+                                    pendingMedia.forEachIndexed { index, media ->
+                                        onSendMedia(
+                                            selectedChat.id,
+                                            media,
+                                            if (index == 0) caption else "",
+                                            currentSendOptions
+                                        )
+                                    }
                                 }
                             } else {
                                 val replyTarget = replyToMessage
@@ -1327,6 +1386,7 @@ private fun BulkMessageSelectionBar(
 private fun ChatSearchNavigationRow(
     current: Int,
     total: Int,
+    onSearchPublicPosts: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit
 ) {
@@ -1343,6 +1403,12 @@ private fun ChatSearchNavigationRow(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+        IconButton(onClick = onSearchPublicPosts) {
+            Icon(
+                painter = painterResource(R.drawable.ic_ai_search),
+                contentDescription = stringResource(R.string.chat_search_public_posts)
+            )
+        }
         IconButton(
             onClick = onPrevious,
             enabled = total > 0
@@ -1575,7 +1641,7 @@ private fun SharedMediaOpenRow(
     messages: List<TelegramMessage>,
     onOpen: () -> Unit
 ) {
-    val mediaCount = remember(messages) { messages.count { it.kind == MessageKind.Image || it.kind == MessageKind.Video } }
+    val mediaCount = remember(messages) { messages.count { it.isSharedMediaKind() } }
     val fileCount = remember(messages) { messages.count { it.kind == MessageKind.File } }
     val linkCount = remember(messages) { messages.count { it.containsVisibleLink() } }
     Row(
@@ -1657,13 +1723,11 @@ private fun SharedMediaGalleryDialog(
 ) {
     var selectedFilter by remember(chat.id) { mutableStateOf(SharedGalleryFilter.Media) }
     val filteredMessages = remember(messages, selectedFilter) {
-        messages.filter { message ->
-            when (selectedFilter) {
-                SharedGalleryFilter.Media -> message.kind == MessageKind.Image || message.kind == MessageKind.Video
-                SharedGalleryFilter.Files -> message.kind == MessageKind.File
-                SharedGalleryFilter.Links -> message.containsVisibleLink()
-            }
-        }
+        messages.filter { message -> message.matchesSharedGalleryFilter(selectedFilter) }
+            .sortedByDescending { message -> message.receivedAtMillis.takeIf { it > 0L } ?: message.id }
+    }
+    val groupedMessages = remember(filteredMessages) {
+        filteredMessages.groupBySharedMediaPeriod()
     }
     Dialog(
         onDismissRequest = onClose,
@@ -1715,13 +1779,7 @@ private fun SharedMediaGalleryDialog(
                 ) {
                     items(SharedGalleryFilter.entries, key = { it.name }) { filter ->
                         val count = remember(messages, filter) {
-                            messages.count { message ->
-                                when (filter) {
-                                    SharedGalleryFilter.Media -> message.kind == MessageKind.Image || message.kind == MessageKind.Video
-                                    SharedGalleryFilter.Files -> message.kind == MessageKind.File
-                                    SharedGalleryFilter.Links -> message.containsVisibleLink()
-                                }
-                            }
+                            messages.count { message -> message.matchesSharedGalleryFilter(filter) }
                         }
                         FilterChip(
                             selected = selectedFilter == filter,
@@ -1732,47 +1790,66 @@ private fun SharedMediaGalleryDialog(
                 }
                 if (filteredMessages.isEmpty()) {
                     EmptyState(stringResource(R.string.shared_media_empty))
-                } else if (selectedFilter == SharedGalleryFilter.Media) {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 112.dp),
-                        modifier = Modifier.weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(AiThemeTokens.CompactSpacing),
-                        verticalArrangement = Arrangement.spacedBy(AiThemeTokens.CompactSpacing)
-                    ) {
-                        gridItems(filteredMessages, key = { it.mediaViewerKey() }) { message ->
-                            SharedMediaGridItem(
-                                message = message,
-                                onOpen = { onOpenMedia(message) },
-                                onDownload = {
-                                    if (message.mediaFileId > 0) {
-                                        onDownloadMedia(message.mediaFileId, message.kind)
-                                    }
-                                }
-                            )
-                        }
-                    }
                 } else {
                     LazyColumn(
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(AiThemeTokens.CompactSpacing)
+                        verticalArrangement = Arrangement.spacedBy(AiThemeTokens.ListSpacing)
                     ) {
-                        items(filteredMessages, key = { it.selectionKey() }) { message ->
-                            if (selectedFilter == SharedGalleryFilter.Files) {
-                                SharedFileRow(
-                                    message = message,
-                                    onDownload = {
-                                        if (message.mediaFileId > 0) {
-                                            onDownloadMedia(message.mediaFileId, message.kind)
+                        groupedMessages.forEach { group ->
+                            item(key = "section:${group.label}") {
+                                Text(
+                                    text = group.label,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (selectedFilter == SharedGalleryFilter.Media ||
+                                selectedFilter == SharedGalleryFilter.PhotosVideos ||
+                                selectedFilter == SharedGalleryFilter.Stickers
+                            ) {
+                                item(key = "grid:${group.label}") {
+                                    androidx.compose.foundation.layout.FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(AiThemeTokens.CompactSpacing),
+                                        verticalArrangement = Arrangement.spacedBy(AiThemeTokens.CompactSpacing)
+                                    ) {
+                                        group.messages.forEach { message ->
+                                            SharedMediaGridItem(
+                                                message = message,
+                                                onOpen = { onOpenMedia(message) },
+                                                onDownload = {
+                                                    if (message.mediaFileId > 0) {
+                                                        onDownloadMedia(message.mediaFileId, message.kind)
+                                                    }
+                                                }
+                                            )
                                         }
                                     }
-                                )
+                                }
+                            } else if (selectedFilter == SharedGalleryFilter.Files ||
+                                selectedFilter == SharedGalleryFilter.Audio ||
+                                selectedFilter == SharedGalleryFilter.Voice
+                            ) {
+                                items(group.messages, key = { it.selectionKey() }) { message ->
+                                    SharedFileRow(
+                                        message = message,
+                                        onDownload = {
+                                            if (message.mediaFileId > 0) {
+                                                onDownloadMedia(message.mediaFileId, message.kind)
+                                            }
+                                        }
+                                    )
+                                }
                             } else {
-                                SharedLinkRow(
-                                    message = message,
-                                    onOpen = {
-                                        message.firstVisibleLink()?.let(onOpenTelegramLink)
-                                    }
-                                )
+                                items(group.messages, key = { it.selectionKey() }) { message ->
+                                    SharedLinkRow(
+                                        message = message,
+                                        onOpen = {
+                                            message.firstVisibleLink()?.let(onOpenTelegramLink)
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -1791,6 +1868,7 @@ private fun SharedMediaGridItem(
     val renderState = rememberMediaRenderState(message)
     Surface(
         modifier = Modifier
+            .width(112.dp)
             .height(126.dp)
             .clickable(onClick = onOpen),
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.58f),
@@ -1967,11 +2045,15 @@ private fun MessageComposer(
     onScheduledSendChange: (Boolean) -> Unit,
     scheduleDelayMinutes: String,
     onScheduleDelayMinutesChange: (String) -> Unit,
+    highQualityPhotos: Boolean,
+    onHighQualityPhotosChange: (Boolean) -> Unit,
     pendingMedia: List<PendingComposerMedia>,
     onRemovePendingMedia: (String) -> Unit,
     onClearPendingMedia: () -> Unit,
     onAttachPhoto: () -> Unit,
     onAttachVideo: () -> Unit,
+    onAttachVoice: () -> Unit,
+    onAttachVideoMessage: () -> Unit,
     onAttachFile: () -> Unit,
     onAttachAlbum: () -> Unit,
     onCapturePhoto: () -> Unit,
@@ -2043,6 +2125,12 @@ private fun MessageComposer(
                 iconRes = R.drawable.ic_ai_schedule,
                 onClick = { onScheduledSendChange(!scheduledSend) }
             )
+            ComposerToggleChip(
+                selected = highQualityPhotos,
+                label = stringResource(R.string.composer_hd_photo),
+                iconRes = android.R.drawable.ic_menu_upload,
+                onClick = { onHighQualityPhotosChange(!highQualityPhotos) }
+            )
             if (scheduledSend) {
                 OutlinedTextField(
                     value = scheduleDelayMinutes,
@@ -2108,6 +2196,8 @@ private fun MessageComposer(
                                 when (type) {
                                     ComposerAttachmentType.Photo -> onAttachPhoto()
                                     ComposerAttachmentType.Video -> onAttachVideo()
+                                    ComposerAttachmentType.Voice -> onAttachVoice()
+                                    ComposerAttachmentType.VideoMessage -> onAttachVideoMessage()
                                     ComposerAttachmentType.File -> onAttachFile()
                                     ComposerAttachmentType.Album -> onAttachAlbum()
                                     ComposerAttachmentType.Camera -> onCapturePhoto()
@@ -2598,6 +2688,7 @@ private fun MessageCard(
     onEdit: (String) -> Unit,
     onDelete: () -> Unit,
     onForward: (Long) -> Unit,
+    onResend: () -> Unit,
     onPin: () -> Unit,
     onUnpin: () -> Unit,
     onReact: (String) -> Unit,
@@ -2634,6 +2725,7 @@ private fun MessageCard(
         !allowAdultContent &&
         (hidden || message.translationStatus == TranslationStatus.Hidden)
     val canHideByContent = ChatMessageVisibilityPolicy.canHideByContent(message)
+    val canResend = message.isOutgoing && message.syncState == MessageSyncState.Failed
     val clipboard = LocalClipboard.current
     val clipboardScope = rememberCoroutineScope()
     var editDialogOpen by remember(message.chatId, message.id) { mutableStateOf(false) }
@@ -2651,6 +2743,7 @@ private fun MessageCard(
     val editRequestedFeedback = stringResource(R.string.message_action_edit_requested)
     val deleteRequestedFeedback = stringResource(R.string.message_action_delete_requested)
     val reactionRequestedFeedback = stringResource(R.string.message_action_reaction_requested)
+    val resendRequestedFeedback = stringResource(R.string.message_action_resend_requested)
 
     if (editDialogOpen) {
         AlertDialog(
@@ -2792,19 +2885,9 @@ private fun MessageCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Text(
-                        stringResource(R.string.message_meta, message.author, message.timestamp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    MessageSyncMetaRow(message)
+                    MessageCompactMetaLine(message)
                 }
                 if (!isHiddenMessage) {
-                    if (hasReadableMessageText && !isNonTranslatableMessage) {
-                        StatusChip(effectiveTranslationStatus)
-                    }
                     if (canHideByContent) {
                         Spacer(Modifier.width(AiThemeTokens.FineSpacing))
                         IconButton(onClick = onHide) {
@@ -2955,6 +3038,7 @@ private fun MessageCard(
                     MessageActionMenu(
                         expanded = actionMenuOpen,
                         canCopy = message.readableTextForCopy().isNotBlank(),
+                        canResend = canResend,
                         onDismiss = { actionMenuOpen = false },
                         onSelect = {
                             actionMenuOpen = false
@@ -2976,6 +3060,11 @@ private fun MessageCard(
                         onForward = {
                             actionMenuOpen = false
                             forwardDialogOpen = true
+                        },
+                        onResend = {
+                            actionMenuOpen = false
+                            onResend()
+                            actionFeedback = resendRequestedFeedback
                         },
                         onPin = {
                             actionMenuOpen = false
@@ -3004,37 +3093,6 @@ private fun MessageCard(
                 }
             }
             if (!isHiddenMessage && !isTelegramRestrictedNotice && !selectionMode) {
-                MessageActionRow(
-                    canCopy = message.readableTextForCopy().isNotBlank(),
-                    onSelect = onToggleSelected,
-                    onCopy = {
-                        val copyText = message.readableTextForCopy()
-                        if (copyText.isNotBlank()) {
-                            clipboardScope.copyPlainText(clipboard, copyText)
-                            actionFeedback = copiedFeedback
-                        }
-                    },
-                    onReply = {
-                        onReply()
-                        actionFeedback = replySelectedFeedback
-                    },
-                    onForward = { forwardDialogOpen = true },
-                    onPin = {
-                        onPin()
-                        actionFeedback = pinRequestedFeedback
-                    },
-                    onUnpin = {
-                        onUnpin()
-                        actionFeedback = unpinRequestedFeedback
-                    },
-                    onReact = { emoji ->
-                        onReact(emoji)
-                        actionFeedback = reactionRequestedFeedback
-                    },
-                    onEdit = { editDialogOpen = true },
-                    onDelete = { deleteDialogOpen = true },
-                    modifier = Modifier.padding(horizontal = AiThemeTokens.InsetPadding)
-                )
                 actionFeedback?.let { feedback ->
                     Text(
                         text = feedback,
@@ -3050,66 +3108,75 @@ private fun MessageCard(
 }
 
 @Composable
-private fun MessageSyncMetaRow(message: TelegramMessage) {
-    val labels = remember(
+private fun MessageCompactMetaLine(message: TelegramMessage) {
+    val uploadProgressPercent = remember(
         message.syncState,
         message.isOutgoing,
-        message.isRead,
-        message.isEdited,
-        message.isPinned
+        message.kind,
+        message.mediaSizeMb,
+        message.mediaDownloadedPrefixBytes
     ) {
-        buildList {
-            when (message.syncState) {
-                MessageSyncState.Sending -> add(R.string.message_sync_sending)
-                MessageSyncState.Failed -> add(R.string.message_sync_failed)
-                MessageSyncState.Deleted -> add(R.string.message_sync_deleted)
-                MessageSyncState.Synced -> if (message.isOutgoing) {
-                    add(if (message.isRead) R.string.message_sync_read else R.string.message_sync_sent)
-                }
-            }
-            if (message.isEdited) add(R.string.message_sync_edited)
-            if (message.isPinned) add(R.string.message_sync_pinned)
+        val expectedBytes = message.mediaSizeMb.takeIf { it > 0 }?.toLong()?.times(BYTES_PER_MB) ?: 0L
+        if (
+            message.isOutgoing &&
+            message.syncState == MessageSyncState.Sending &&
+            message.kind != MessageKind.Text &&
+            expectedBytes > 0L &&
+            message.mediaDownloadedPrefixBytes > 0L
+        ) {
+            ((message.mediaDownloadedPrefixBytes * 100L) / expectedBytes).toInt().coerceIn(1, 99)
+        } else {
+            null
         }
     }
-    if (labels.isEmpty()) return
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(AiThemeTokens.SmallSpacing),
-        verticalArrangement = Arrangement.spacedBy(AiThemeTokens.TinySpacing),
-        modifier = Modifier.padding(top = 4.dp)
-    ) {
-        labels.forEach { labelRes ->
-            Surface(
-                color = when (labelRes) {
-                    R.string.message_sync_failed -> MaterialTheme.colorScheme.errorContainer
-                    R.string.message_sync_sending -> MaterialTheme.colorScheme.secondaryContainer
-                    else -> MaterialTheme.colorScheme.surfaceContainerHigh
-                },
-                shape = MaterialTheme.shapes.small
-            ) {
-                Text(
-                    text = stringResource(labelRes),
-                    modifier = Modifier.padding(horizontal = AiThemeTokens.DenseSpacing, vertical = AiThemeTokens.FineSpacing),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = when (labelRes) {
-                        R.string.message_sync_failed -> MaterialTheme.colorScheme.onErrorContainer
-                        R.string.message_sync_sending -> MaterialTheme.colorScheme.onSecondaryContainer
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
-            }
+    val metaParts = mutableListOf<String>()
+    if (message.author.isNotBlank() && !message.author.equals(message.chatTitle, ignoreCase = true)) {
+        metaParts += message.author
+    }
+    if (message.timestamp.isNotBlank()) {
+        metaParts += message.timestamp
+    }
+    when (message.syncState) {
+        MessageSyncState.Sending -> metaParts += stringResource(R.string.message_sync_sending)
+        MessageSyncState.Failed -> metaParts += stringResource(R.string.message_sync_failed)
+        MessageSyncState.Deleted -> metaParts += stringResource(R.string.message_sync_deleted)
+        MessageSyncState.Synced -> if (message.isOutgoing) {
+            metaParts += stringResource(if (message.isRead) R.string.message_sync_read else R.string.message_sync_sent)
         }
     }
+    if (message.isEdited) metaParts += stringResource(R.string.message_sync_edited)
+    if (message.isPinned) metaParts += stringResource(R.string.message_sync_pinned)
+    when (message.translationStatus) {
+        TranslationStatus.Pending,
+        TranslationStatus.Translating -> metaParts += stringResource(R.string.translation_pending)
+        TranslationStatus.Failed -> metaParts += stringResource(R.string.translation_failed)
+        TranslationStatus.Hidden -> metaParts += stringResource(R.string.translation_hidden)
+        TranslationStatus.Ready -> Unit
+    }
+    uploadProgressPercent?.let { percent ->
+        metaParts += stringResource(R.string.message_upload_progress, percent)
+    }
+    if (metaParts.isEmpty()) return
+    Text(
+        text = metaParts.joinToString("  •  "),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+    )
 }
 
 @Composable
 private fun MessageActionMenu(
     expanded: Boolean,
     canCopy: Boolean,
+    canResend: Boolean,
     onDismiss: () -> Unit,
     onSelect: () -> Unit,
     onCopy: () -> Unit,
     onReply: () -> Unit,
     onForward: () -> Unit,
+    onResend: () -> Unit,
     onPin: () -> Unit,
     onUnpin: () -> Unit,
     onEdit: () -> Unit,
@@ -3161,6 +3228,18 @@ private fun MessageActionMenu(
             },
             onClick = onForward
         )
+        if (canResend) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.resend_message)) },
+                leadingIcon = {
+                    Icon(
+                        painter = painterResource(android.R.drawable.ic_menu_revert),
+                        contentDescription = null
+                    )
+                },
+                onClick = onResend
+            )
+        }
         DropdownMenuItem(
             text = { Text(stringResource(R.string.pin_message)) },
             leadingIcon = {
@@ -3221,160 +3300,51 @@ private fun MessageActionMenu(
     }
 }
 
-@Composable
-private fun MessageActionRow(
-    canCopy: Boolean,
-    onSelect: () -> Unit,
-    onCopy: () -> Unit,
-    onReply: () -> Unit,
-    onForward: () -> Unit,
-    onPin: () -> Unit,
-    onUnpin: () -> Unit,
-    onReact: (String) -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        shape = MaterialTheme.shapes.medium,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-    ) {
-        LazyRow(
-            modifier = Modifier.padding(horizontal = AiThemeTokens.DenseSpacing, vertical = AiThemeTokens.SmallSpacing),
-            horizontalArrangement = Arrangement.spacedBy(AiThemeTokens.DenseSpacing),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            item {
-                CompactMessageActionButton(
-                    iconRes = android.R.drawable.checkbox_on_background,
-                    contentDescription = stringResource(R.string.select_message),
-                    onClick = onSelect
-                )
-            }
-            item {
-                CompactMessageActionButton(
-                    iconRes = android.R.drawable.ic_menu_save,
-                    contentDescription = stringResource(R.string.copy_message),
-                    onClick = onCopy,
-                    enabled = canCopy
-                )
-            }
-            item {
-                CompactMessageActionButton(
-                    iconRes = android.R.drawable.ic_menu_revert,
-                    contentDescription = stringResource(R.string.reply_message),
-                    onClick = onReply
-                )
-            }
-            item {
-                CompactMessageActionButton(
-                    iconRes = android.R.drawable.ic_menu_share,
-                    contentDescription = stringResource(R.string.forward_message),
-                    onClick = onForward
-                )
-            }
-            item {
-                CompactMessageActionButton(
-                    iconRes = android.R.drawable.ic_menu_upload,
-                    contentDescription = stringResource(R.string.pin_message),
-                    onClick = onPin
-                )
-            }
-            item {
-                CompactMessageActionButton(
-                    iconRes = android.R.drawable.ic_menu_revert,
-                    contentDescription = stringResource(R.string.unpin_message),
-                    onClick = onUnpin
-                )
-            }
-            item {
-                CompactMessageActionButton(
-                    iconRes = android.R.drawable.ic_menu_edit,
-                    contentDescription = stringResource(R.string.edit_message),
-                    onClick = onEdit
-                )
-            }
-            item {
-                CompactMessageActionButton(
-                    iconRes = android.R.drawable.ic_menu_delete,
-                    contentDescription = stringResource(R.string.delete_message),
-                    onClick = onDelete,
-                    destructive = true
-                )
-            }
-            QuickReactionEmojis.forEach { emoji ->
-                item {
-                    QuickReactionButton(emoji = emoji, onClick = { onReact(emoji) })
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CompactMessageActionButton(
-    iconRes: Int,
-    contentDescription: String,
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-    destructive: Boolean = false
-) {
-    val backgroundColor = when {
-        !enabled -> MaterialTheme.colorScheme.surface.copy(alpha = 0.52f)
-        destructive -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
-        else -> MaterialTheme.colorScheme.surface
-    }
-    val contentColor = when {
-        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.36f)
-        destructive -> MaterialTheme.colorScheme.onErrorContainer
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-
-    Surface(
-        modifier = Modifier
-            .size(AiThemeTokens.CompactIconButtonSize)
-            .clip(MaterialTheme.shapes.small)
-            .clickable(enabled = enabled, onClick = onClick),
-        color = backgroundColor,
-        shape = MaterialTheme.shapes.small
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = contentDescription,
-                modifier = Modifier.size(AiThemeTokens.ControlIconSize),
-                tint = contentColor
-            )
-        }
-    }
-}
-
-@Composable
-private fun QuickReactionButton(emoji: String, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier
-            .size(AiThemeTokens.CompactIconButtonSize)
-            .clip(MaterialTheme.shapes.small)
-            .clickable(onClick = onClick),
-        color = MaterialTheme.colorScheme.surface,
-        shape = MaterialTheme.shapes.small
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                text = emoji,
-                style = MaterialTheme.typography.bodyLarge
-            )
-        }
-    }
-}
-
 private val QuickReactionEmojis = listOf(
     "\uD83D\uDC4D",
     "\u2764\uFE0F",
     "\uD83D\uDE02"
 )
+
+private data class SharedMediaPeriodGroup(
+    val label: String,
+    val messages: List<TelegramMessage>
+)
+
+private fun List<TelegramMessage>.groupBySharedMediaPeriod(): List<SharedMediaPeriodGroup> {
+    if (isEmpty()) return emptyList()
+    val now = System.currentTimeMillis()
+    val dayFormat = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+    val monthFormat = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
+    return groupBy { message ->
+        val timestamp = message.receivedAtMillis.takeIf { it > 0L } ?: 0L
+        val ageMillis = now - timestamp
+        when {
+            timestamp <= 0L -> "Unknown date"
+            ageMillis in 0L until SHARED_MEDIA_DAY_MILLIS -> "Today"
+            ageMillis in SHARED_MEDIA_DAY_MILLIS until (2L * SHARED_MEDIA_DAY_MILLIS) -> "Yesterday"
+            ageMillis in 0L until (31L * SHARED_MEDIA_DAY_MILLIS) -> dayFormat.format(Date(timestamp))
+            else -> monthFormat.format(Date(timestamp))
+        }
+    }.map { (label, groupMessages) ->
+        SharedMediaPeriodGroup(label, groupMessages)
+    }
+}
+
+private fun ChatContentFilter.toTelegramMessageSearchFilter(): TelegramMessageSearchFilter {
+    return when (this) {
+        ChatContentFilter.All,
+        ChatContentFilter.Media -> TelegramMessageSearchFilter.Empty
+        ChatContentFilter.PhotosVideos -> TelegramMessageSearchFilter.PhotoVideo
+        ChatContentFilter.Audio -> TelegramMessageSearchFilter.Audio
+        ChatContentFilter.Voice -> TelegramMessageSearchFilter.Voice
+        ChatContentFilter.Stickers -> TelegramMessageSearchFilter.Sticker
+        ChatContentFilter.Files -> TelegramMessageSearchFilter.Document
+        ChatContentFilter.Links -> TelegramMessageSearchFilter.Url
+    }
+}
+
+private const val SHARED_MEDIA_DAY_MILLIS = 24L * 60L * 60L * 1000L
 
 private fun TelegramMessage.readableTextForCopy(): String {
     return MessagePrivacyPolicy.readableText(this)
@@ -3389,6 +3359,10 @@ private fun TelegramMessage.replyPreview(): String {
                 MessageKind.Image -> "Image"
                 MessageKind.Video -> "Video"
                 MessageKind.File -> mediaFileName.ifBlank { "File" }
+                MessageKind.Voice -> mediaFileName.ifBlank { "Voice" }
+                MessageKind.VideoNote -> mediaFileName.ifBlank { "Video message" }
+                MessageKind.Audio -> mediaFileName.ifBlank { "Audio" }
+                MessageKind.Sticker -> mediaFileName.ifBlank { "Sticker" }
                 MessageKind.Text -> ""
             }
         }
@@ -3410,27 +3384,6 @@ fun Avatar(seed: String) {
             color = androidx.compose.ui.graphics.Color.White,
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold
-        )
-    }
-}
-
-@Composable
-private fun StatusChip(status: TranslationStatus) {
-    val label = when (status) {
-        TranslationStatus.Pending, TranslationStatus.Translating -> stringResource(R.string.translation_pending)
-        TranslationStatus.Ready -> stringResource(R.string.translation_ready)
-        TranslationStatus.Hidden -> stringResource(R.string.translation_hidden)
-        TranslationStatus.Failed -> stringResource(R.string.translation_failed)
-    }
-    Surface(
-        color = MaterialTheme.colorScheme.primaryContainer,
-        shape = MaterialTheme.shapes.small
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.padding(horizontal = AiThemeTokens.CompactSpacing, vertical = AiThemeTokens.SmallSpacing),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onPrimaryContainer
         )
     }
 }
@@ -3536,6 +3489,7 @@ private fun ChatScreenPreview() {
             onSendMessage = { _, _, _ -> },
             onSendReplyMessage = { _, _, _, _ -> },
             onSendMedia = { _, _, _, _ -> },
+            onSendMediaAlbum = { _, _, _, _ -> },
             onSendPoll = { _, _, _, _, _, _ -> },
             onSendContact = { _, _, _, _, _ -> },
             onSetDraft = { _, _ -> },
@@ -3545,10 +3499,13 @@ private fun ChatScreenPreview() {
             onForwardMessage = { _, _ -> },
             onDeleteMessages = { _, _ -> },
             onForwardMessages = { _, _, _ -> },
+            onResendMessage = {},
             onPinMessage = {},
             onUnpinMessage = {},
             onReactToMessage = { _, _ -> },
             onLoadOlderMessages = { _, _ -> },
+            onSearchChatMessages = { _, _, _ -> },
+            onSearchPublicPosts = { _, _ -> },
             onRefreshChats = {},
             onOpenTelegramLink = {},
             onDownloadMedia = { _, _ -> },

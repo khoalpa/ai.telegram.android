@@ -23,6 +23,10 @@ import kotlinx.coroutines.flow.map
 class ChatRepository(
     private val database: AppDatabase
 ) {
+    private companion object {
+        const val MaxChatPreviewLength = 500
+    }
+
     fun observeChats(): Flow<List<TelegramChat>> {
         return database.chatDao().observeChats().map { entities ->
             entities.map { it.toDomain() }
@@ -45,16 +49,17 @@ class ChatRepository(
             database.chatDao().upsert(
                 existing.copy(
                     unreadCount = chat.unreadCount,
-                    lastMessagePreview = chat.lastMessagePreview,
+                    lastMessagePreview = chat.lastMessagePreview.chatPreviewForStorage(),
                     updatedAtMillis = chat.updatedAtMillis,
                     activeAction = chat.activeAction.ifBlank { existing.activeAction },
                     lastReadInboxMessageId = maxOf(existing.lastReadInboxMessageId, chat.lastReadInboxMessageId),
                     lastReadOutboxMessageId = maxOf(existing.lastReadOutboxMessageId, chat.lastReadOutboxMessageId),
-                    pinnedMessageId = chat.pinnedMessageId.takeIf { it > 0L } ?: existing.pinnedMessageId
+                    pinnedMessageId = chat.pinnedMessageId.takeIf { it > 0L } ?: existing.pinnedMessageId,
+                    isMainList = existing.isMainList || chat.isMainList
                 )
             )
         } else {
-            database.chatDao().upsert(chat.toEntity())
+            database.chatDao().upsert(chat.withStorageSafePreview().toEntity())
         }
     }
 
@@ -63,7 +68,7 @@ class ChatRepository(
         if (existing != null) {
             database.chatDao().upsert(
                 existing.copy(
-                    lastMessagePreview = preview,
+                    lastMessagePreview = preview.chatPreviewForStorage(),
                     updatedAtMillis = System.currentTimeMillis()
                 )
             )
@@ -74,8 +79,9 @@ class ChatRepository(
                     title = "Telegram",
                     type = "chat",
                     unreadCount = 0,
-                    lastMessagePreview = preview,
-                    updatedAtMillis = System.currentTimeMillis()
+                    lastMessagePreview = preview.chatPreviewForStorage(),
+                    updatedAtMillis = System.currentTimeMillis(),
+                    isMainList = false
                 ).toEntity()
             )
         }
@@ -121,6 +127,14 @@ class ChatRepository(
     suspend fun clear() {
         database.chatDao().clear()
     }
+
+    private fun TelegramChat.withStorageSafePreview(): TelegramChat {
+        return copy(lastMessagePreview = lastMessagePreview.chatPreviewForStorage())
+    }
+
+    private fun String.chatPreviewForStorage(): String {
+        return if (length <= MaxChatPreviewLength) this else take(MaxChatPreviewLength)
+    }
 }
 
 class SenderRepository(
@@ -132,12 +146,24 @@ class SenderRepository(
         }
     }
 
+    fun observeContacts(): Flow<List<TelegramSender>> {
+        return database.senderDao().observeContacts().map { entities ->
+            entities.map { it.toDomain() }
+        }
+    }
+
     suspend fun seedIfEmpty() {
         SampleTelegramRepository.senders().forEach { upsert(it) }
     }
 
     suspend fun upsert(sender: TelegramSender) {
-        database.senderDao().upsert(sender.toEntity())
+        val existing = database.senderDao().find(sender.id)
+        val mergedSender = if (existing != null) {
+            sender.copy(isContact = existing.isContact || sender.isContact)
+        } else {
+            sender
+        }
+        database.senderDao().upsert(mergedSender.toEntity())
     }
 
     suspend fun clear() {
@@ -1115,7 +1141,8 @@ private fun TelegramSender.toEntity(): SenderEntity {
         id = id,
         displayName = displayName,
         type = type,
-        updatedAtMillis = updatedAtMillis
+        updatedAtMillis = updatedAtMillis,
+        isContact = isContact
     )
 }
 
@@ -1130,7 +1157,8 @@ private fun TelegramChat.toEntity(): ChatEntity {
         activeAction = activeAction,
         lastReadInboxMessageId = lastReadInboxMessageId,
         lastReadOutboxMessageId = lastReadOutboxMessageId,
-        pinnedMessageId = pinnedMessageId
+        pinnedMessageId = pinnedMessageId,
+        isMainList = isMainList
     )
 }
 

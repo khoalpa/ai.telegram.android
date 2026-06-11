@@ -19,10 +19,39 @@ internal fun TelegramChat.matchesFolderFilter(filter: ChatFolderFilter): Boolean
 internal fun TelegramMessage.matchesContentFilter(filter: ChatContentFilter): Boolean {
     return when (filter) {
         ChatContentFilter.All -> true
-        ChatContentFilter.Media -> kind == MessageKind.Image || kind == MessageKind.Video
+        ChatContentFilter.Media -> isSharedMediaKind()
+        ChatContentFilter.PhotosVideos -> isPhotoOrVideoKind()
+        ChatContentFilter.Audio -> kind == MessageKind.Audio
+        ChatContentFilter.Voice -> kind == MessageKind.Voice
+        ChatContentFilter.Stickers -> kind == MessageKind.Sticker
         ChatContentFilter.Files -> kind == MessageKind.File
         ChatContentFilter.Links -> containsVisibleLink()
     }
+}
+
+internal fun TelegramMessage.matchesSharedGalleryFilter(filter: SharedGalleryFilter): Boolean {
+    return when (filter) {
+        SharedGalleryFilter.Media -> isSharedMediaKind()
+        SharedGalleryFilter.PhotosVideos -> isPhotoOrVideoKind()
+        SharedGalleryFilter.Audio -> kind == MessageKind.Audio
+        SharedGalleryFilter.Voice -> kind == MessageKind.Voice
+        SharedGalleryFilter.Stickers -> kind == MessageKind.Sticker
+        SharedGalleryFilter.Files -> kind == MessageKind.File
+        SharedGalleryFilter.Links -> containsVisibleLink()
+    }
+}
+
+internal fun TelegramMessage.isPhotoOrVideoKind(): Boolean {
+    return kind == MessageKind.Image ||
+        kind == MessageKind.Video ||
+        kind == MessageKind.VideoNote
+}
+
+internal fun TelegramMessage.isSharedMediaKind(): Boolean {
+    return isPhotoOrVideoKind() ||
+        kind == MessageKind.Audio ||
+        kind == MessageKind.Voice ||
+        kind == MessageKind.Sticker
 }
 
 internal fun TelegramMessage.matchesDateFilter(filter: ChatDateFilter): Boolean {

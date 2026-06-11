@@ -101,6 +101,7 @@ class FakeTelegramClientTest {
         data class SentMessage(val chatId: Long, val text: String)
         data class ReplyMessage(val chatId: Long, val replyToMessageId: Long, val text: String)
         data class MediaMessage(val chatId: Long, val localPath: String, val kind: MessageKind, val caption: String)
+        data class MediaAlbum(val chatId: Long, val media: List<TelegramOutgoingMedia>)
         data class PollMessage(
             val chatId: Long,
             val question: String,
@@ -118,6 +119,7 @@ class FakeTelegramClientTest {
         data class EditMessage(val chatId: Long, val messageId: Long, val text: String)
         data class DeleteMessages(val chatId: Long, val messageIds: List<Long>, val revoke: Boolean)
         data class ForwardMessages(val toChatId: Long, val fromChatId: Long, val messageIds: List<Long>)
+        data class ResendMessages(val chatId: Long, val messageIds: List<Long>)
         data class PinnedMessage(
             val chatId: Long,
             val messageId: Long,
@@ -136,11 +138,13 @@ class FakeTelegramClientTest {
         val sentMessages = mutableListOf<SentMessage>()
         val replyMessages = mutableListOf<ReplyMessage>()
         val mediaMessages = mutableListOf<MediaMessage>()
+        val mediaAlbums = mutableListOf<MediaAlbum>()
         val pollMessages = mutableListOf<PollMessage>()
         val contactMessages = mutableListOf<ContactMessage>()
         val editedMessages = mutableListOf<EditMessage>()
         val deletedMessages = mutableListOf<DeleteMessages>()
         val forwardedMessages = mutableListOf<ForwardMessages>()
+        val resentMessages = mutableListOf<ResendMessages>()
         val pinnedMessages = mutableListOf<PinnedMessage>()
         val reactions = mutableListOf<MessageReaction>()
         val botStarts = mutableListOf<BotStart>()
@@ -186,6 +190,8 @@ class FakeTelegramClientTest {
             onStatus(TdLibStatus.Closed)
         }
 
+        override fun registerDeviceForPush(token: String, encrypt: Boolean) = Unit
+
         override fun loadMainChatList(limit: Int) {
             onChat(sampleChat)
         }
@@ -201,6 +207,19 @@ class FakeTelegramClientTest {
         override fun loadContacts(limit: Int) = Unit
         override fun searchChats(query: String, limit: Int) = Unit
         override fun searchPublicChats(query: String) = Unit
+        override fun searchChatMessages(
+            chatId: Long,
+            query: String,
+            filter: TelegramMessageSearchFilter,
+            fromMessageId: Long,
+            limit: Int
+        ) = Unit
+        override fun searchPublicPosts(
+            query: String,
+            filter: TelegramMessageSearchFilter,
+            offset: String,
+            limit: Int
+        ) = Unit
         override fun joinChannel(usernameOrLink: String) = Unit
         override fun openTelegramLink(link: String) = Unit
 
@@ -223,9 +242,14 @@ class FakeTelegramClientTest {
             localPath: String,
             kind: MessageKind,
             caption: String,
-            options: MessageSendOptions
+            options: MessageSendOptions,
+            mediaOptions: MediaSendOptions
         ) {
             mediaMessages += MediaMessage(chatId, localPath, kind, caption)
+        }
+
+        override fun sendMediaAlbum(chatId: Long, media: List<TelegramOutgoingMedia>, options: MessageSendOptions) {
+            mediaAlbums += MediaAlbum(chatId, media)
         }
 
         override fun sendPollMessage(
@@ -260,6 +284,10 @@ class FakeTelegramClientTest {
 
         override fun forwardMessages(toChatId: Long, fromChatId: Long, messageIds: List<Long>) {
             forwardedMessages += ForwardMessages(toChatId, fromChatId, messageIds)
+        }
+
+        override fun resendMessages(chatId: Long, messageIds: List<Long>) {
+            resentMessages += ResendMessages(chatId, messageIds)
         }
 
         override fun pinMessage(

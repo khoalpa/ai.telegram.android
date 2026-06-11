@@ -34,7 +34,8 @@ data class ChatEntity(
     val activeAction: String,
     val lastReadInboxMessageId: Long,
     val lastReadOutboxMessageId: Long,
-    val pinnedMessageId: Long
+    val pinnedMessageId: Long,
+    val isMainList: Boolean
 ) {
     fun toDomain(): TelegramChat = TelegramChat(
         id = id,
@@ -46,7 +47,8 @@ data class ChatEntity(
         activeAction = activeAction,
         lastReadInboxMessageId = lastReadInboxMessageId,
         lastReadOutboxMessageId = lastReadOutboxMessageId,
-        pinnedMessageId = pinnedMessageId
+        pinnedMessageId = pinnedMessageId,
+        isMainList = isMainList
     )
 }
 
@@ -60,13 +62,15 @@ data class SenderEntity(
     @PrimaryKey val id: String,
     val displayName: String,
     val type: String,
-    val updatedAtMillis: Long
+    val updatedAtMillis: Long,
+    val isContact: Boolean
 ) {
     fun toDomain(): TelegramSender = TelegramSender(
         id = id,
         displayName = displayName,
         type = type,
-        updatedAtMillis = updatedAtMillis
+        updatedAtMillis = updatedAtMillis,
+        isContact = isContact
     )
 }
 

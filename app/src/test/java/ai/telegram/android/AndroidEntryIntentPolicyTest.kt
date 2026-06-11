@@ -20,6 +20,10 @@ class AndroidEntryIntentPolicyTest {
             "http://telegram.me/example",
             AndroidEntryIntentPolicy.sanitizeTelegramLink("http://telegram.me/example")
         )
+        assertEquals(
+            "https://telegram.dog/example",
+            AndroidEntryIntentPolicy.sanitizeTelegramLink("https://telegram.dog/example")
+        )
     }
 
     @Test

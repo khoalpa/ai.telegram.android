@@ -88,6 +88,7 @@ class TdLibReflectionClient(
     private var jsonReceiveThread: Thread? = null
     private val jsonParser = TdLibJsonParser(onSender = onSender)
     private val objectParser = TdLibObjectParser(onSender = onSender)
+    private val knownContactSenderIds = mutableSetOf<String>()
 
 
     override fun start() {
@@ -168,6 +169,28 @@ class TdLibReflectionClient(
         send(function)
     }
 
+    override fun registerDeviceForPush(token: String, encrypt: Boolean) {
+        val cleanToken = token.trim()
+        if (cleanToken.isBlank()) return
+        if (sendJsonIfAvailable(
+                json("registerDevice")
+                    .put("device_token", json("deviceTokenFirebaseCloudMessaging")
+                        .put("token", cleanToken)
+                        .put("encrypt", encrypt))
+                    .put("other_user_ids", JSONArray())
+                    .put("@extra", "push:register")
+            )
+        ) return
+        val function = newTdApiOrNull("RegisterDevice") ?: return
+        val deviceToken = newTdApiOrNull("DeviceTokenFirebaseCloudMessaging") ?: return
+        deviceToken.setFieldIfPresent("token", cleanToken)
+        deviceToken.setFieldIfPresent("encrypt", encrypt)
+        send(function.apply {
+            setFieldIfPresent("deviceToken", deviceToken)
+            setFieldIfPresent("otherUserIds", LongArray(0))
+        })
+    }
+
     override fun loadMainChatList(limit: Int) {
         if (sendJsonIfAvailable(
                 json("loadChats")
@@ -233,7 +256,7 @@ class TdLibReflectionClient(
         if (sendJsonIfAvailable(json("getContacts").put("@extra", "contacts:$limit"))) return
         val function = newTdApiOrNull("GetContacts") ?: return
         send(function, onResult = { result ->
-            val requestedCount = requestUsersFromResult(result, limit)
+            val requestedCount = requestUsersFromResult(result, limit, markContacts = true)
             onContactsLoaded(requestedCount)
         })
     }
@@ -265,6 +288,86 @@ class TdLibReflectionClient(
         send(
             function.apply { setFieldIfPresent("query", trimmed) },
             onResult = { result -> requestChatsFromResult(result, 50) }
+        )
+    }
+
+    override fun searchChatMessages(
+        chatId: Long,
+        query: String,
+        filter: TelegramMessageSearchFilter,
+        fromMessageId: Long,
+        limit: Int
+    ) {
+        val trimmed = query.trim()
+        if (chatId == 0L || trimmed.isBlank()) return
+        val cleanLimit = limit.coerceIn(1, 100)
+        if (sendJsonIfAvailable(
+                json("searchChatMessages")
+                    .put("chat_id", chatId)
+                    .put("message_thread_id", 0L)
+                    .put("sender_id", JSONObject.NULL)
+                    .put("from_message_id", fromMessageId.coerceAtLeast(0L))
+                    .put("offset", 0)
+                    .put("limit", cleanLimit)
+                    .put("filter", messageSearchFilterJson(filter))
+                    .put("query", trimmed)
+                    .put("@extra", "search_chat:$chatId")
+            )
+        ) return
+        val function = newTdApiOrNull("SearchChatMessages") ?: return
+        send(
+            function.apply {
+                setFieldIfPresent("chatId", chatId)
+                setFieldIfPresent("messageThreadId", 0L)
+                setFieldIfPresent("senderId", null)
+                setFieldIfPresent("fromMessageId", fromMessageId.coerceAtLeast(0L))
+                setFieldIfPresent("offset", 0)
+                setFieldIfPresent("limit", cleanLimit)
+                setFieldIfPresent("filter", messageSearchFilterObject(filter))
+                setFieldIfPresent("query", trimmed)
+            },
+            onResult = { result ->
+                objectParser.parseMessagesResult(result).forEach { message ->
+                    requestSenderIfNeeded(message.senderId)
+                    onMessage(message)
+                }
+            }
+        )
+    }
+
+    override fun searchPublicPosts(
+        query: String,
+        filter: TelegramMessageSearchFilter,
+        offset: String,
+        limit: Int
+    ) {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return
+        val cleanLimit = limit.coerceIn(1, 100)
+        val cleanOffset = offset.trim()
+        if (sendJsonIfAvailable(
+                json("searchPublicMessages")
+                    .put("query", trimmed)
+                    .put("offset", cleanOffset)
+                    .put("limit", cleanLimit)
+                    .put("filter", messageSearchFilterJson(filter))
+                    .put("@extra", "search_public")
+            )
+        ) return
+        val function = newTdApiOrNull("SearchPublicMessages") ?: return
+        send(
+            function.apply {
+                setFieldIfPresent("query", trimmed)
+                setFieldIfPresent("offset", cleanOffset)
+                setFieldIfPresent("limit", cleanLimit)
+                setFieldIfPresent("filter", messageSearchFilterObject(filter))
+            },
+            onResult = { result ->
+                objectParser.parseMessagesResult(result).forEach { message ->
+                    requestSenderIfNeeded(message.senderId)
+                    onMessage(message)
+                }
+            }
         )
     }
 
@@ -301,7 +404,11 @@ class TdLibReflectionClient(
             return
         }
 
-        val username = TdLibCommandMapper.extractTelegramUsername(input) ?: return
+        val username = TdLibCommandMapper.extractTelegramUsername(input)
+        if (username == null) {
+            requestMessageLinkInfo(input)
+            return
+        }
         if (sendJsonIfAvailable(json("searchPublicChat").put("username", username).put("@extra", "open:$username"))) return
         val function = newTdApiOrNull("SearchPublicChat") ?: return
         send(
@@ -399,41 +506,13 @@ class TdLibReflectionClient(
         localPath: String,
         kind: MessageKind,
         caption: String,
-        options: MessageSendOptions
+        options: MessageSendOptions,
+        mediaOptions: MediaSendOptions
     ) {
         val cleanPath = readableLocalPathOrReport(localPath) ?: return
         if (cleanPath.isBlank() || kind == MessageKind.Text) return
         val trimmedCaption = caption.trim()
-        val jsonContent = when (kind) {
-            MessageKind.Image -> json("inputMessagePhoto")
-                .put("photo", json("inputFileLocal").put("path", cleanPath))
-                .put("thumbnail", JSONObject.NULL)
-                .put("added_sticker_file_ids", JSONArray())
-                .put("width", 0)
-                .put("height", 0)
-                .put("caption", formattedTextJson(trimmedCaption))
-                .put("show_caption_above_media", false)
-                .put("has_spoiler", false)
-                .put("self_destruct_type", JSONObject.NULL)
-            MessageKind.Video -> json("inputMessageVideo")
-                .put("video", json("inputFileLocal").put("path", cleanPath))
-                .put("thumbnail", JSONObject.NULL)
-                .put("added_sticker_file_ids", JSONArray())
-                .put("duration", 0)
-                .put("width", 0)
-                .put("height", 0)
-                .put("supports_streaming", true)
-                .put("caption", formattedTextJson(trimmedCaption))
-                .put("show_caption_above_media", false)
-                .put("has_spoiler", false)
-                .put("self_destruct_type", JSONObject.NULL)
-            MessageKind.File -> json("inputMessageDocument")
-                .put("document", json("inputFileLocal").put("path", cleanPath))
-                .put("thumbnail", JSONObject.NULL)
-                .put("disable_content_type_detection", false)
-                .put("caption", formattedTextJson(trimmedCaption))
-            MessageKind.Text -> return
-        }
+        val jsonContent = inputMessageContentJson(cleanPath, kind, trimmedCaption, mediaOptions) ?: return
         if (sendJsonIfAvailable(
                 json("sendMessage")
                     .put("chat_id", chatId)
@@ -443,45 +522,65 @@ class TdLibReflectionClient(
         ) return
 
         val function = newTdApiOrNull("SendMessage") ?: return
-        val inputContent = when (kind) {
-            MessageKind.Image -> newTdApiOrNull("InputMessagePhoto")?.apply {
-                setFieldIfPresent("photo", inputFileLocalOrNull(cleanPath))
-                setFieldIfPresent("thumbnail", null)
-                setFieldIfPresent("addedStickerFileIds", intArrayOf())
-                setFieldIfPresent("width", 0)
-                setFieldIfPresent("height", 0)
-                setFieldIfPresent("caption", formattedTextObject(trimmedCaption))
-                setFieldIfPresent("showCaptionAboveMedia", false)
-                setFieldIfPresent("hasSpoiler", false)
-                setFieldIfPresent("selfDestructType", null)
-            }
-            MessageKind.Video -> newTdApiOrNull("InputMessageVideo")?.apply {
-                setFieldIfPresent("video", inputFileLocalOrNull(cleanPath))
-                setFieldIfPresent("thumbnail", null)
-                setFieldIfPresent("addedStickerFileIds", intArrayOf())
-                setFieldIfPresent("duration", 0)
-                setFieldIfPresent("width", 0)
-                setFieldIfPresent("height", 0)
-                setFieldIfPresent("supportsStreaming", true)
-                setFieldIfPresent("caption", formattedTextObject(trimmedCaption))
-                setFieldIfPresent("showCaptionAboveMedia", false)
-                setFieldIfPresent("hasSpoiler", false)
-                setFieldIfPresent("selfDestructType", null)
-            }
-            MessageKind.File -> newTdApiOrNull("InputMessageDocument")?.apply {
-                setFieldIfPresent("document", inputFileLocalOrNull(cleanPath))
-                setFieldIfPresent("thumbnail", null)
-                setFieldIfPresent("disableContentTypeDetection", false)
-                setFieldIfPresent("caption", formattedTextObject(trimmedCaption))
-            }
-            MessageKind.Text -> null
-        } ?: return
+        val inputContent = inputMessageContentObject(cleanPath, kind, trimmedCaption, mediaOptions) ?: return
         function.apply {
             setFieldIfPresent("chatId", chatId)
             setFieldIfPresent("options", messageSendOptionsObject(options))
             setFieldIfPresent("inputMessageContent", inputContent)
         }
         send(function, onResult = { result -> objectParser.parseMessage(result)?.let(onMessage) })
+    }
+
+    override fun sendMediaAlbum(
+        chatId: Long,
+        media: List<TelegramOutgoingMedia>,
+        options: MessageSendOptions
+    ) {
+        val cleanMedia = media
+            .take(10)
+            .mapNotNull { item ->
+                val cleanPath = readableLocalPathOrReport(item.localPath) ?: return@mapNotNull null
+                val kind = item.kind
+                if (kind != MessageKind.Image && kind != MessageKind.Video) return@mapNotNull null
+                TelegramOutgoingMedia(
+                    localPath = cleanPath,
+                    kind = kind,
+                    caption = item.caption.trim(),
+                    mediaOptions = item.mediaOptions
+                )
+            }
+        if (chatId == 0L || cleanMedia.isEmpty()) return
+        if (cleanMedia.size == 1) {
+            val item = cleanMedia.single()
+            sendMediaMessage(chatId, item.localPath, item.kind, item.caption, options, item.mediaOptions)
+            return
+        }
+
+        if (sendJsonIfAvailable(
+                json("sendMessageAlbum")
+                    .put("chat_id", chatId)
+                    .put("message_thread_id", 0L)
+                    .put("reply_to", JSONObject.NULL)
+                    .put("options", messageSendOptionsJson(options))
+                    .put("input_message_contents", JSONArray(cleanMedia.mapNotNull { item ->
+                        inputMessageContentJson(item.localPath, item.kind, item.caption, item.mediaOptions)
+                    }))
+            )
+        ) return
+
+        val function = newTdApiOrNull("SendMessageAlbum") ?: return
+        val inputContents = cleanMedia.mapNotNull { item ->
+            inputMessageContentObject(item.localPath, item.kind, item.caption, item.mediaOptions)
+        }.toTypedArray()
+        if (inputContents.isEmpty()) return
+        function.apply {
+            setFieldIfPresent("chatId", chatId)
+            setFieldIfPresent("messageThreadId", 0L)
+            setFieldIfPresent("replyTo", null)
+            setFieldIfPresent("options", messageSendOptionsObject(options))
+            setFieldIfPresent("inputMessageContents", inputContents)
+        }
+        send(function)
     }
 
     override fun sendPollMessage(
@@ -645,6 +744,22 @@ class TdLibReflectionClient(
             setFieldIfPresent("messageIds", cleanMessageIds.toLongArray())
             setFieldIfPresent("sendCopy", false)
             setFieldIfPresent("removeCaption", false)
+        })
+    }
+
+    override fun resendMessages(chatId: Long, messageIds: List<Long>) {
+        val cleanMessageIds = messageIds.distinct().filter { it > 0L }
+        if (chatId == 0L || cleanMessageIds.isEmpty()) return
+        if (sendJsonIfAvailable(
+                json("resendMessages")
+                    .put("chat_id", chatId)
+                    .put("message_ids", JSONArray(cleanMessageIds))
+            )
+        ) return
+        val function = newTdApiOrNull("ResendMessages") ?: return
+        send(function.apply {
+            setFieldIfPresent("chatId", chatId)
+            setFieldIfPresent("messageIds", cleanMessageIds.toLongArray())
         })
     }
 
@@ -2048,7 +2163,7 @@ class TdLibReflectionClient(
                 objectParser.deletedStory(chatId, storyId)?.let(onStory)
             }
             "UpdateChatActiveStories" -> objectParser.parseStoriesResult(update.field("activeStories")).forEach(onStory)
-            "UpdateUser" -> objectParser.parseUser(update.field("user"))?.let(onSender)
+            "UpdateUser" -> objectParser.parseUser(update.field("user"))?.markKnownContact()?.let(onSender)
             "UpdateBasicGroup" -> objectParser.parseGroup(update.field("basicGroup"), "basic_group")?.let(onSender)
             "UpdateSupergroup" -> objectParser.parseGroup(update.field("supergroup"), "supergroup")?.let(onSender)
             "UpdateFile" -> objectParser.parseFileUpdate(update.field("file"))?.let(onFile)
@@ -2205,7 +2320,7 @@ class TdLibReflectionClient(
                 requestJsonSenderIfNeeded(message.senderId)
                 handleJsonMessageExtra(json.optString("@extra"), message)
             }?.let(onMessage)
-            "updateUser" -> jsonParser.parseUser(json.optJSONObject("user"))?.let(onSender)
+            "updateUser" -> jsonParser.parseUser(json.optJSONObject("user"))?.markKnownContact()?.let(onSender)
             "updateBasicGroup" -> jsonParser.parseGroup(json.optJSONObject("basic_group"), "basic_group")?.let(onSender)
             "updateSupergroup" -> jsonParser.parseGroup(json.optJSONObject("supergroup"), "supergroup")?.let(onSender)
             "updateFile" -> jsonParser.parseFileUpdate(json.optJSONObject("file"))?.let(onFile)
@@ -2273,6 +2388,7 @@ class TdLibReflectionClient(
             "businessChatLinks" -> onBusinessChatLinks(jsonParser.parseBusinessChatLinks(json))
             "businessChatLink" -> jsonParser.parseBusinessChatLink(json)?.let { onBusinessChatLinks(listOf(it)) }
             "chats" -> requestJsonChats(json.optJSONArray("chat_ids"))
+            "messageLinkInfo" -> openChatFromLinkInfo(json.messageLinkChatId())
             "users" -> {
                 val extra = json.optString("@extra")
                 val limit = extra
@@ -2280,19 +2396,28 @@ class TdLibReflectionClient(
                     ?.substringAfter("contacts:")
                     ?.toIntOrNull()
                     ?: Int.MAX_VALUE
-                val requestedCount = requestJsonUsers(json.optJSONArray("user_ids"), limit)
+                val requestedCount = requestJsonUsers(
+                    userIds = json.optJSONArray("user_ids"),
+                    limit = limit,
+                    markContacts = extra.startsWith("contacts:")
+                )
                 if (extra.startsWith("contacts:")) {
                     onContactsLoaded(requestedCount)
                 }
             }
-            "user" -> jsonParser.parseUser(json)?.let(onSender)
+            "user" -> jsonParser.parseUser(json)
+                ?.markKnownContact()
+                ?.let(onSender)
             "chat" -> {
-                val chat = jsonParser.parseChat(json)
-                chat?.let(onChat)
                 val extra = json.optString("@extra")
+                val chat = jsonParser.parseChat(json)
+                val userOpened = extra.isUserOpenedChatExtra()
+                chat?.let { parsedChat ->
+                    onChat(parsedChat)
+                }
                 if (extra.startsWith("join:") && chat != null) {
                     joinChat(chat.id)
-                } else if ((extra.startsWith("open:") || extra.startsWith("open_invite:") || extra.startsWith("open_bot:")) && chat != null) {
+                } else if (userOpened && chat != null) {
                     onOpenChat(chat.id)
                     loadChatHistory(chat.id)
                 }
@@ -2548,7 +2673,7 @@ class TdLibReflectionClient(
                 val userId = senderId.removePrefix("user:").toLongOrNull() ?: return
                 val function = newTdApiOrNull("GetUser") ?: return
                 send(function.apply { setFieldIfPresent("userId", userId) }) { result ->
-                    objectParser.parseUser(result)?.let(onSender)
+                    objectParser.parseUser(result)?.markKnownContact()?.let(onSender)
                 }
             }
             senderId.startsWith("chat:") -> {
@@ -2568,11 +2693,19 @@ class TdLibReflectionClient(
         }
     }
 
-    private fun requestJsonUsers(userIds: JSONArray?, limit: Int = Int.MAX_VALUE): Int {
+    private fun requestJsonUsers(
+        userIds: JSONArray?,
+        limit: Int = Int.MAX_VALUE,
+        markContacts: Boolean = false
+    ): Int {
         if (userIds == null) return 0
         val count = minOf(userIds.length(), limit.coerceAtLeast(0))
         for (index in 0 until count) {
-            sendJsonIfAvailable(json("getUser").put("user_id", userIds.optLong(index)))
+            val userId = userIds.optLong(index)
+            if (markContacts && userId != 0L) {
+                knownContactSenderIds += "user:$userId"
+            }
+            sendJsonIfAvailable(json("getUser").put("user_id", userId))
         }
         return count
     }
@@ -2587,16 +2720,36 @@ class TdLibReflectionClient(
         }
     }
 
-    private fun requestUsersFromResult(result: Any?, limit: Int): Int {
+    private fun requestUsersFromResult(result: Any?, limit: Int, markContacts: Boolean = false): Int {
         val userIds = objectParser.userIdsFromResult(result) ?: return 0
         val requestedUserIds = userIds.take(limit)
         requestedUserIds.forEach { userId ->
+            if (markContacts) {
+                knownContactSenderIds += "user:$userId"
+            }
             val function = newTdApiOrNull("GetUser") ?: return@forEach
             send(function.apply { setFieldIfPresent("userId", userId) }) { user ->
-                objectParser.parseUser(user)?.let(onSender)
+                objectParser.parseUser(user)
+                    ?.markKnownContact()
+                    ?.let(onSender)
             }
         }
         return requestedUserIds.size
+    }
+
+    private fun TelegramSender.markKnownContact(): TelegramSender {
+        return if (id in knownContactSenderIds) {
+            copy(isContact = true)
+        } else {
+            this
+        }
+    }
+
+    private fun String.isUserOpenedChatExtra(): Boolean {
+        return startsWith("open:") ||
+            startsWith("open_invite:") ||
+            startsWith("open_bot:") ||
+            startsWith("open_message_link:")
     }
 
     private fun joinChatByInviteLink(inviteLink: String, openAfterJoin: Boolean = false) {
@@ -2613,6 +2766,48 @@ class TdLibReflectionClient(
                     onOpenChat(chat.id)
                     loadChatHistory(chat.id)
                 }
+            }
+        )
+    }
+
+    private fun requestMessageLinkInfo(link: String) {
+        val cleanLink = link.trim()
+        if (cleanLink.isBlank()) return
+        if (
+            sendJsonIfAvailable(
+                json("getMessageLinkInfo")
+                    .put("url", cleanLink)
+                    .put("@extra", "message_link:$cleanLink")
+            )
+        ) return
+        val function = newTdApiOrNull("GetMessageLinkInfo") ?: return
+        send(
+            function.apply { setFieldIfPresent("url", cleanLink) },
+            onResult = { result -> openChatFromLinkInfo(result.messageLinkChatId()) }
+        )
+    }
+
+    private fun openChatFromLinkInfo(chatId: Long) {
+        if (chatId == 0L) return
+        if (
+            sendJsonIfAvailable(
+                json("getChat")
+                    .put("chat_id", chatId)
+                    .put("@extra", "open_message_link:$chatId")
+            )
+        ) return
+        val function = newTdApiOrNull("GetChat")
+        if (function == null) {
+            onOpenChat(chatId)
+            loadChatHistory(chatId)
+            return
+        }
+        send(
+            function.apply { setFieldIfPresent("chatId", chatId) },
+            onResult = { result ->
+                objectParser.parseChat(result)?.let(onChat)
+                onOpenChat(chatId)
+                loadChatHistory(chatId)
             }
         )
     }
@@ -2718,6 +2913,92 @@ class TdLibReflectionClient(
             .put("entities", JSONArray())
     }
 
+    private fun inputMessageContentJson(
+        localPath: String,
+        kind: MessageKind,
+        caption: String,
+        mediaOptions: MediaSendOptions
+    ): JSONObject? {
+        return when (kind) {
+            MessageKind.Image -> json("inputMessagePhoto")
+                .put("photo", inputFileLocalJson(localPath))
+                .put("thumbnail", JSONObject.NULL)
+                .put("added_sticker_file_ids", JSONArray())
+                .put("width", 0)
+                .put("height", 0)
+                .put("quality", if (mediaOptions.highQualityPhoto) 100 else 0)
+                .put("caption", formattedTextJson(caption))
+                .put("show_caption_above_media", false)
+                .put("has_spoiler", false)
+                .put("self_destruct_type", JSONObject.NULL)
+            MessageKind.Video -> json("inputMessageVideo")
+                .put("video", inputFileLocalJson(localPath))
+                .put("thumbnail", JSONObject.NULL)
+                .put("added_sticker_file_ids", JSONArray())
+                .put("duration", 0)
+                .put("width", 0)
+                .put("height", 0)
+                .put("supports_streaming", true)
+                .put("caption", formattedTextJson(caption))
+                .put("show_caption_above_media", false)
+                .put("has_spoiler", false)
+                .put("self_destruct_type", JSONObject.NULL)
+            MessageKind.File -> json("inputMessageDocument")
+                .put("document", inputFileLocalJson(localPath))
+                .put("thumbnail", JSONObject.NULL)
+                .put("disable_content_type_detection", false)
+                .put("caption", formattedTextJson(caption))
+            MessageKind.Audio -> json("inputMessageAudio")
+                .put("audio", inputFileLocalJson(localPath))
+                .put("album_cover_thumbnail", JSONObject.NULL)
+                .put("duration", 0)
+                .put("title", "")
+                .put("performer", "")
+                .put("caption", formattedTextJson(caption))
+            MessageKind.Voice -> json("inputMessageVoiceNote")
+                .put("voice_note", inputFileLocalJson(localPath))
+                .put("duration", 0)
+                .put("waveform", JSONArray())
+                .put("caption", formattedTextJson(caption))
+            MessageKind.VideoNote -> json("inputMessageVideoNote")
+                .put("video_note", inputFileLocalJson(localPath))
+                .put("thumbnail", JSONObject.NULL)
+                .put("duration", 0)
+                .put("length", 0)
+                .put("self_destruct_type", JSONObject.NULL)
+            MessageKind.Sticker,
+            MessageKind.Text -> null
+        }
+    }
+
+    private fun messageSearchFilterJson(filter: TelegramMessageSearchFilter): JSONObject {
+        val type = when (filter) {
+            TelegramMessageSearchFilter.Empty -> "searchMessagesFilterEmpty"
+            TelegramMessageSearchFilter.PhotoVideo -> "searchMessagesFilterPhotoAndVideo"
+            TelegramMessageSearchFilter.Document -> "searchMessagesFilterDocument"
+            TelegramMessageSearchFilter.Url -> "searchMessagesFilterUrl"
+            TelegramMessageSearchFilter.Audio -> "searchMessagesFilterAudio"
+            TelegramMessageSearchFilter.Voice -> "searchMessagesFilterVoiceNote"
+            TelegramMessageSearchFilter.VideoNote -> "searchMessagesFilterVideoNote"
+            TelegramMessageSearchFilter.Sticker -> "searchMessagesFilterSticker"
+        }
+        return json(type)
+    }
+
+    private fun messageSearchFilterObject(filter: TelegramMessageSearchFilter): Any? {
+        val className = when (filter) {
+            TelegramMessageSearchFilter.Empty -> "SearchMessagesFilterEmpty"
+            TelegramMessageSearchFilter.PhotoVideo -> "SearchMessagesFilterPhotoAndVideo"
+            TelegramMessageSearchFilter.Document -> "SearchMessagesFilterDocument"
+            TelegramMessageSearchFilter.Url -> "SearchMessagesFilterUrl"
+            TelegramMessageSearchFilter.Audio -> "SearchMessagesFilterAudio"
+            TelegramMessageSearchFilter.Voice -> "SearchMessagesFilterVoiceNote"
+            TelegramMessageSearchFilter.VideoNote -> "SearchMessagesFilterVideoNote"
+            TelegramMessageSearchFilter.Sticker -> "SearchMessagesFilterSticker"
+        }
+        return newTdApiOrNull(className)
+    }
+
     private fun messageSendOptionsJson(options: MessageSendOptions): JSONObject {
         return json("messageSendOptions")
             .put("disable_notification", options.disableNotification)
@@ -2791,6 +3072,70 @@ class TdLibReflectionClient(
         }
     }
 
+    private fun inputMessageContentObject(
+        localPath: String,
+        kind: MessageKind,
+        caption: String,
+        mediaOptions: MediaSendOptions
+    ): Any? {
+        return when (kind) {
+            MessageKind.Image -> newTdApiOrNull("InputMessagePhoto")?.apply {
+                setFieldIfPresent("photo", inputFileLocalOrNull(localPath))
+                setFieldIfPresent("thumbnail", null)
+                setFieldIfPresent("addedStickerFileIds", intArrayOf())
+                setFieldIfPresent("width", 0)
+                setFieldIfPresent("height", 0)
+                setFieldIfPresent("quality", if (mediaOptions.highQualityPhoto) 100 else 0)
+                setFieldIfPresent("caption", formattedTextObject(caption))
+                setFieldIfPresent("showCaptionAboveMedia", false)
+                setFieldIfPresent("hasSpoiler", false)
+                setFieldIfPresent("selfDestructType", null)
+            }
+            MessageKind.Video -> newTdApiOrNull("InputMessageVideo")?.apply {
+                setFieldIfPresent("video", inputFileLocalOrNull(localPath))
+                setFieldIfPresent("thumbnail", null)
+                setFieldIfPresent("addedStickerFileIds", intArrayOf())
+                setFieldIfPresent("duration", 0)
+                setFieldIfPresent("width", 0)
+                setFieldIfPresent("height", 0)
+                setFieldIfPresent("supportsStreaming", true)
+                setFieldIfPresent("caption", formattedTextObject(caption))
+                setFieldIfPresent("showCaptionAboveMedia", false)
+                setFieldIfPresent("hasSpoiler", false)
+                setFieldIfPresent("selfDestructType", null)
+            }
+            MessageKind.File -> newTdApiOrNull("InputMessageDocument")?.apply {
+                setFieldIfPresent("document", inputFileLocalOrNull(localPath))
+                setFieldIfPresent("thumbnail", null)
+                setFieldIfPresent("disableContentTypeDetection", false)
+                setFieldIfPresent("caption", formattedTextObject(caption))
+            }
+            MessageKind.Audio -> newTdApiOrNull("InputMessageAudio")?.apply {
+                setFieldIfPresent("audio", inputFileLocalOrNull(localPath))
+                setFieldIfPresent("albumCoverThumbnail", null)
+                setFieldIfPresent("duration", 0)
+                setFieldIfPresent("title", "")
+                setFieldIfPresent("performer", "")
+                setFieldIfPresent("caption", formattedTextObject(caption))
+            }
+            MessageKind.Voice -> newTdApiOrNull("InputMessageVoiceNote")?.apply {
+                setFieldIfPresent("voiceNote", inputFileLocalOrNull(localPath))
+                setFieldIfPresent("duration", 0)
+                setFieldIfPresent("waveform", ByteArray(0))
+                setFieldIfPresent("caption", formattedTextObject(caption))
+            }
+            MessageKind.VideoNote -> newTdApiOrNull("InputMessageVideoNote")?.apply {
+                setFieldIfPresent("videoNote", inputFileLocalOrNull(localPath))
+                setFieldIfPresent("thumbnail", null)
+                setFieldIfPresent("duration", 0)
+                setFieldIfPresent("length", 0)
+                setFieldIfPresent("selfDestructType", null)
+            }
+            MessageKind.Sticker,
+            MessageKind.Text -> null
+        }
+    }
+
     private fun messageSendOptionsObject(options: MessageSendOptions): Any? {
         return newTdApiOptional("MessageSendOptions")?.apply {
             setFieldIfPresent("disableNotification", options.disableNotification)
@@ -2861,6 +3206,10 @@ class TdLibReflectionClient(
                 .put("height", 0)
                 .put("added_sticker_file_ids", JSONArray())
             MessageKind.File,
+            MessageKind.Voice,
+            MessageKind.VideoNote,
+            MessageKind.Audio,
+            MessageKind.Sticker,
             MessageKind.Text -> null
         }
     }
@@ -2879,6 +3228,10 @@ class TdLibReflectionClient(
                 setFieldIfPresent("addedStickerFileIds", intArrayOf())
             }
             MessageKind.File,
+            MessageKind.Voice,
+            MessageKind.VideoNote,
+            MessageKind.Audio,
+            MessageKind.Sticker,
             MessageKind.Text -> null
         }
     }
@@ -3247,6 +3600,19 @@ class TdLibReflectionClient(
                     ?.optLong("id", Long.MIN_VALUE)
                     ?.takeIf { it != Long.MIN_VALUE }
             }
+    }
+
+    private fun JSONObject.messageLinkChatId(): Long {
+        return optLong("chat_id", 0L).takeIf { it != 0L }
+            ?: optJSONObject("message")?.optLong("chat_id", 0L)?.takeIf { it != 0L }
+            ?: 0L
+    }
+
+    private fun Any?.messageLinkChatId(): Long {
+        val value = this ?: return 0L
+        return (value.field("chatId") as? Number)?.toLong()?.takeIf { it != 0L }
+            ?: (value.field("message")?.field("chatId") as? Number)?.toLong()?.takeIf { it != 0L }
+            ?: 0L
     }
 
     private fun JSONObject.deletedMessageIds(): List<Long> {

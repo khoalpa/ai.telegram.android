@@ -37,6 +37,7 @@ class TelegramAppViewModel internal constructor(
 
     val chats = chatRepository.observeChats()
     val senders = senderRepository.observeSenders()
+    val contacts = senderRepository.observeContacts()
     val messages = messageRepository.observeMessages()
     val hiddenContent = blacklistRepository.observeHiddenContent()
 
