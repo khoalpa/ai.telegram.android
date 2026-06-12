@@ -464,7 +464,9 @@ private fun TelegramLikeChatScreen(
                     ChatListRow(
                         chat = chat,
                         onClick = {
-                            Log.d(ChatTapLogTag, "ChatScreen row tap chatId=${chat.id} title=${chat.title}")
+                            if (BuildConfig.DEBUG) {
+                                Log.d(ChatTapLogTag, "ChatScreen row tap chatId=${chat.id} title=${chat.title}")
+                            }
                             onSelectChat(chat)
                         }
                     )

@@ -1,5 +1,6 @@
 ﻿package ai.telegram.android.data.telegram
 
+import ai.telegram.android.BuildConfig
 import ai.telegram.android.data.MessageKind
 import ai.telegram.android.data.MessageSyncState
 import ai.telegram.android.data.TelegramChat
@@ -860,7 +861,7 @@ class TdLibReflectionClient(
 
     override fun createCall(userId: Long, isVideo: Boolean) {
         if (userId == 0L) return
-        Log.d(CALL_LOG_TAG, "createCall request userId=$userId video=$isVideo")
+        logCallDebug("createCall request userId=$userId video=$isVideo")
         val extra = "call:create:$userId:${if (isVideo) "video" else "voice"}"
         if (
             sendJsonIfAvailable(
@@ -882,7 +883,7 @@ class TdLibReflectionClient(
                 setFieldIfPresent("isVideo", isVideo)
             },
             onResult = { result ->
-                Log.d(CALL_LOG_TAG, "createCall result=${result?.javaClass?.simpleName ?: "null"}")
+                logCallDebug("createCall result=${result?.javaClass?.simpleName ?: "null"}")
                 objectParser.parseCall(result)?.let(onCall)
             }
         )
@@ -2603,7 +2604,11 @@ class TdLibReflectionClient(
         val message = json.optString("message", "TDLib error")
         val extra = json.optString("@extra")
         if (extra.startsWith("call:")) {
-            Log.w(CALL_LOG_TAG, "tdlib error extra=$extra message=$message")
+            if (BuildConfig.DEBUG) {
+                Log.w(CALL_LOG_TAG, "tdlib error extra=$extra message=$message")
+            } else {
+                Log.w(CALL_LOG_TAG, "tdlib call error")
+            }
             onOperationError(message)
         }
         val isAuthenticationError = extra.startsWith("auth:") ||
@@ -2861,8 +2866,7 @@ class TdLibReflectionClient(
         val tdLibClass = jsonTdLibClass ?: return false
         val type = function.optString("@type")
         if (type in setOf("createCall", "acceptCall", "discardCall", "sendCallSignalingData")) {
-            Log.d(
-                CALL_LOG_TAG,
+            logCallDebug(
                 "sendJson type=$type extra=${function.optString("@extra")} user=${function.optLong("user_id", 0L)} " +
                     "call=${function.optInt("call_id", 0)} video=${function.optBoolean("is_video", false)}"
             )
@@ -2892,17 +2896,24 @@ class TdLibReflectionClient(
 
     private fun logJsonCall(source: String, call: JSONObject?) {
         if (call == null) {
-            Log.w(CALL_LOG_TAG, "$source call=null")
+            if (BuildConfig.DEBUG) {
+                Log.w(CALL_LOG_TAG, "$source call=null")
+            }
             return
         }
         val state = call.optJSONObject("state")
-        Log.d(
-            CALL_LOG_TAG,
+        logCallDebug(
             "$source id=${call.optInt("id", 0)} user=${call.optLong("user_id", 0L)} " +
                 "out=${call.optBoolean("is_outgoing", false)} video=${call.optBoolean("is_video", false)} " +
                 "state=${state?.optString("@type").orEmpty()} created=${state?.optBoolean("is_created", false) ?: false} " +
                 "received=${state?.optBoolean("is_received", false) ?: false} extra=${call.optString("@extra")}"
         )
+    }
+
+    private fun logCallDebug(message: String) {
+        if (BuildConfig.DEBUG) {
+            Log.d(CALL_LOG_TAG, message)
+        }
     }
 
     private fun json(type: String): JSONObject = JSONObject().put("@type", type)
@@ -3161,8 +3172,7 @@ class TdLibReflectionClient(
 
     private fun callProtocolJson(): JSONObject {
         val protocol = callProtocolProvider()
-        Log.d(
-            CALL_LOG_TAG,
+        logCallDebug(
             "protocol min=${protocol.minLayer} max=${protocol.maxLayer} " +
                 "p2p=${protocol.udpP2p} reflector=${protocol.udpReflector} " +
                 "versions=${protocol.libraryVersions.joinToString(",")}"
@@ -3179,8 +3189,7 @@ class TdLibReflectionClient(
 
     private fun callProtocolObject(): Any? {
         val protocol = callProtocolProvider()
-        Log.d(
-            CALL_LOG_TAG,
+        logCallDebug(
             "protocol min=${protocol.minLayer} max=${protocol.maxLayer} " +
                 "p2p=${protocol.udpP2p} reflector=${protocol.udpReflector} " +
                 "versions=${protocol.libraryVersions.joinToString(",")}"

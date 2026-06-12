@@ -425,7 +425,7 @@ class TelegramNotificationManager(
         runCatching {
             notificationManager.notify(id, notification)
         }.onFailure { error ->
-            Log.w(TAG, "Could not post notification $id", error)
+            Log.w(TAG, "Could not post notification", error)
         }
     }
 
@@ -433,7 +433,7 @@ class TelegramNotificationManager(
         runCatching {
             notificationManager.cancel(id)
         }.onFailure { error ->
-            Log.w(TAG, "Could not cancel notification $id", error)
+            Log.w(TAG, "Could not cancel notification", error)
         }
     }
 

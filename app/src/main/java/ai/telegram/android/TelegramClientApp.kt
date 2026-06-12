@@ -1481,12 +1481,16 @@ fun TelegramClientApp(
                     videoSubtitleColor = videoSubtitleColor,
                     contentTranslationTargetLanguage = contentTranslationTargetLanguage,
                     onSelectChat = { chat ->
-                        Log.d(
-                            ChatTapLogTag,
-                            "TelegramClientApp onSelectChat chatId=${chat.id} previousSelectedChatId=$selectedChatId"
-                        )
+                        if (BuildConfig.DEBUG) {
+                            Log.d(
+                                ChatTapLogTag,
+                                "TelegramClientApp onSelectChat chatId=${chat.id} previousSelectedChatId=$selectedChatId"
+                            )
+                        }
                         selectedChatId = chat.id
-                        Log.d(ChatTapLogTag, "TelegramClientApp selectedChatId updated to $selectedChatId")
+                        if (BuildConfig.DEBUG) {
+                            Log.d(ChatTapLogTag, "TelegramClientApp selectedChatId updated to $selectedChatId")
+                        }
                         requestInitialChatHistory(chat.id)
                     },
                     onBackToChats = { selectedChatId = null },
