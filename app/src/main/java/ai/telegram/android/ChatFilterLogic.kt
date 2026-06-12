@@ -66,6 +66,18 @@ internal fun TelegramMessage.matchesDateFilter(filter: ChatDateFilter): Boolean 
     }
 }
 
+internal fun mergeDisplayedMessages(
+    current: List<TelegramMessage>,
+    incoming: List<TelegramMessage>
+): List<TelegramMessage> {
+    if (incoming.isEmpty() || current.isEmpty() || incoming.size >= current.size) return incoming
+    if (incoming.size > MAX_PARTIAL_MESSAGE_SNAPSHOT_SIZE) return incoming
+
+    val mergedByKey = current.associateBy { it.displayMergeKey() }.toMutableMap()
+    incoming.forEach { message -> mergedByKey[message.displayMergeKey()] = message }
+    return mergedByKey.values.sortedWith(MessageDisplayComparator)
+}
+
 internal fun TelegramMessage.containsVisibleLink(): Boolean {
     return visibleLinkSources().any { text -> UrlPattern.containsMatchIn(text) }
 }
@@ -102,3 +114,10 @@ private fun TelegramMessage.visibleLinkSources(): List<String> {
 
 private const val ONE_DAY_MILLIS = 24L * 60L * 60L * 1000L
 private const val MAX_SENDER_FILTER_OPTIONS = 12
+private const val MAX_PARTIAL_MESSAGE_SNAPSHOT_SIZE = 3
+
+private val MessageDisplayComparator = compareByDescending<TelegramMessage> {
+    it.receivedAtMillis.takeIf { timestamp -> timestamp > 0L } ?: it.id
+}.thenByDescending { it.id }
+
+private fun TelegramMessage.displayMergeKey(): String = "$chatId:$id"

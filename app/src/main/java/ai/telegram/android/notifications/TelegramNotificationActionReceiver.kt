@@ -6,6 +6,7 @@ import ai.telegram.android.data.telegram.TdLibStatus
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.core.app.RemoteInput
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +19,11 @@ class TelegramNotificationActionReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                handleAction(context.applicationContext, intent)
+                runCatching {
+                    handleAction(context.applicationContext, intent)
+                }.onFailure { error ->
+                    Log.w(TAG, "Notification action failed", error)
+                }
             } finally {
                 pendingResult.finish()
             }
@@ -30,31 +35,31 @@ class TelegramNotificationActionReceiver : BroadcastReceiver() {
         if (chatId == 0L) return
 
         val client = backgroundClient(context)
-        client.start()
-        if (!client.awaitReady()) {
-            client.close()
-            return
-        }
+        try {
+            client.start()
+            if (!client.awaitReady()) return
 
-        when (intent.action) {
-            TelegramNotificationManager.ACTION_REPLY -> {
-                val replyText = NotificationActionPolicy.sanitizeReplyText(
-                    RemoteInput.getResultsFromIntent(intent)
-                        ?.getCharSequence(TelegramNotificationManager.KEY_TEXT_REPLY)
-                )
-                if (replyText.isNotBlank()) {
-                    client.sendTextMessage(chatId, replyText)
+            when (intent.action) {
+                TelegramNotificationManager.ACTION_REPLY -> {
+                    val replyText = NotificationActionPolicy.sanitizeReplyText(
+                        RemoteInput.getResultsFromIntent(intent)
+                            ?.getCharSequence(TelegramNotificationManager.KEY_TEXT_REPLY)
+                    )
+                    if (replyText.isNotBlank()) {
+                        client.sendTextMessage(chatId, replyText)
+                        client.markChatRead(chatId)
+                        TelegramNotificationManager(context).cancelChat(chatId)
+                    }
+                }
+                TelegramNotificationManager.ACTION_MARK_READ -> {
                     client.markChatRead(chatId)
                     TelegramNotificationManager(context).cancelChat(chatId)
                 }
             }
-            TelegramNotificationManager.ACTION_MARK_READ -> {
-                client.markChatRead(chatId)
-                TelegramNotificationManager(context).cancelChat(chatId)
-            }
+            Thread.sleep(SEND_FLUSH_DELAY_MILLIS)
+        } finally {
+            client.close()
         }
-        Thread.sleep(SEND_FLUSH_DELAY_MILLIS)
-        client.close()
     }
 
     private fun backgroundClient(context: Context): ReadyAwaitingClient {
@@ -82,6 +87,7 @@ class TelegramNotificationActionReceiver : BroadcastReceiver() {
     }
 
     private companion object {
+        const val TAG = "TelegramNotifAction"
         const val READY_TIMEOUT_SECONDS = 8L
         const val SEND_FLUSH_DELAY_MILLIS = 500L
     }

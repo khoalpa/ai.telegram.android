@@ -22,6 +22,7 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.RemoteInput
@@ -44,9 +45,13 @@ class TelegramNotificationManager(
         ).apply {
             description = appContext.getString(R.string.notification_channel_messages_description)
         }
-        appContext
-            .getSystemService(NotificationManager::class.java)
-            .createNotificationChannel(channel)
+        runCatching {
+            appContext
+                .getSystemService(NotificationManager::class.java)
+                ?.createNotificationChannel(channel)
+        }.onFailure { error ->
+            Log.w(TAG, "Could not create message notification channel", error)
+        }
     }
 
     fun ensureCallChannel() {
@@ -60,9 +65,13 @@ class TelegramNotificationManager(
             enableVibration(true)
             setSound(null, null)
         }
-        appContext
-            .getSystemService(NotificationManager::class.java)
-            .createNotificationChannel(channel)
+        runCatching {
+            appContext
+                .getSystemService(NotificationManager::class.java)
+                ?.createNotificationChannel(channel)
+        }.onFailure { error ->
+            Log.w(TAG, "Could not create call notification channel", error)
+        }
     }
 
     fun canPostNotifications(): Boolean {
@@ -106,7 +115,7 @@ class TelegramNotificationManager(
         ) {
             return
         }
-        notificationManager.notify(notificationId(message.chatId), notification)
+        notifySafely(notificationId(message.chatId), notification)
         notifyMessageGroupSummary()
     }
 
@@ -136,13 +145,17 @@ class TelegramNotificationManager(
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(contentIntent)
-            .setFullScreenIntent(contentIntent, true)
             .setAutoCancel(false)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setSilent(true)
+            .apply {
+                if (canUseFullScreenIntent()) {
+                    setFullScreenIntent(contentIntent, true)
+                }
+            }
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -153,21 +166,21 @@ class TelegramNotificationManager(
         ) {
             return
         }
-        notificationManager.notify(incomingCallNotificationId(call.id), notification)
+        notifySafely(incomingCallNotificationId(call.id), notification)
     }
 
     fun cancelIncomingCall(callId: Int) {
         if (activeIncomingCallId == callId) {
             stopIncomingCallAlert()
         }
-        notificationManager.cancel(incomingCallNotificationId(callId))
+        cancelSafely(incomingCallNotificationId(callId))
     }
 
     fun cancelChat(chatId: Long) {
         activeMessageNotifications.remove(chatId)
-        notificationManager.cancel(notificationId(chatId))
+        cancelSafely(notificationId(chatId))
         if (activeMessageNotifications.isEmpty()) {
-            notificationManager.cancel(MESSAGE_GROUP_SUMMARY_NOTIFICATION_ID)
+            cancelSafely(MESSAGE_GROUP_SUMMARY_NOTIFICATION_ID)
         } else {
             notifyMessageGroupSummary()
         }
@@ -236,7 +249,7 @@ class TelegramNotificationManager(
         ) {
             return
         }
-        notificationManager.notify(MESSAGE_GROUP_SUMMARY_NOTIFICATION_ID, summary)
+        notifySafely(MESSAGE_GROUP_SUMMARY_NOTIFICATION_ID, summary)
     }
 
     private fun replyAction(chatId: Long): NotificationCompat.Action {
@@ -304,18 +317,23 @@ class TelegramNotificationManager(
         activeIncomingCallId = callId
         val ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-        incomingCallRingtone = RingtoneManager.getRingtone(appContext, ringtoneUri)?.apply {
-            audioAttributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build()
-            play()
-        }
+        incomingCallRingtone = runCatching {
+            RingtoneManager.getRingtone(appContext, ringtoneUri)?.apply {
+                audioAttributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+                play()
+            }
+        }.onFailure { error ->
+            Log.w(TAG, "Could not play incoming call ringtone", error)
+        }.getOrNull()
         vibrateIncomingCall()
     }
 
     private fun stopIncomingCallAlert() {
-        incomingCallRingtone?.stop()
+        runCatching { incomingCallRingtone?.stop() }
+            .onFailure { error -> Log.w(TAG, "Could not stop incoming call ringtone", error) }
         incomingCallRingtone = null
         activeIncomingCallId = null
     }
@@ -328,9 +346,38 @@ class TelegramNotificationManager(
             appContext.getSystemService(Vibrator::class.java)
         } ?: return
         if (!vibrator.hasVibrator()) return
-        vibrator.vibrate(
-            VibrationEffect.createWaveform(longArrayOf(0, 600, 400, 600, 400, 600), -1)
-        )
+        runCatching {
+            vibrator.vibrate(
+                VibrationEffect.createWaveform(longArrayOf(0, 600, 400, 600, 400, 600), -1)
+            )
+        }.onFailure { error ->
+            Log.w(TAG, "Could not vibrate for incoming call", error)
+        }
+    }
+
+    private fun canUseFullScreenIntent(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+            runCatching {
+                appContext.getSystemService(NotificationManager::class.java)
+                    ?.canUseFullScreenIntent()
+                    ?: false
+            }.getOrDefault(false)
+    }
+
+    private fun notifySafely(id: Int, notification: Notification) {
+        runCatching {
+            notificationManager.notify(id, notification)
+        }.onFailure { error ->
+            Log.w(TAG, "Could not post notification $id", error)
+        }
+    }
+
+    private fun cancelSafely(id: Int) {
+        runCatching {
+            notificationManager.cancel(id)
+        }.onFailure { error ->
+            Log.w(TAG, "Could not cancel notification $id", error)
+        }
     }
 
     private fun TelegramMessage.notificationText(): String {
@@ -360,6 +407,7 @@ class TelegramNotificationManager(
         private const val CHANNEL_MESSAGES = "telegram_messages"
         private const val CHANNEL_CALLS = "telegram_calls"
         private const val GROUP_MESSAGES = "telegram_messages"
+        private const val TAG = "TelegramNotifications"
         private const val MESSAGE_GROUP_SUMMARY_NOTIFICATION_ID = 0x061A1000
         private const val MAX_SUMMARY_LINES = 5
 

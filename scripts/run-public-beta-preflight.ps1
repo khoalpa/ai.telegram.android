@@ -88,6 +88,80 @@ function Find-EmulatorExe {
     return ""
 }
 
+function Find-AaptExe {
+    $candidates = @()
+    if ($env:ANDROID_HOME) {
+        $candidates += Join-Path $env:ANDROID_HOME "build-tools"
+    }
+    if ($env:ANDROID_SDK_ROOT) {
+        $candidates += Join-Path $env:ANDROID_SDK_ROOT "build-tools"
+    }
+    if ($env:LOCALAPPDATA) {
+        $candidates += Join-Path $env:LOCALAPPDATA "Android\Sdk\build-tools"
+    }
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate)) {
+            $aapt = Get-ChildItem -LiteralPath $candidate -Recurse -Filter "aapt.exe" -ErrorAction SilentlyContinue |
+                Sort-Object FullName -Descending |
+                Select-Object -First 1
+            if ($aapt) {
+                return $aapt.FullName
+            }
+        }
+    }
+    return ""
+}
+
+function Test-ManifestPermissionHygiene {
+    $releaseLog = "04-release-build.log"
+    Invoke-Logged `
+        -Name "Release APK build" `
+        -FilePath (Join-Path $repoRoot "gradlew.bat") `
+        -Arguments @(":app:assembleOutsidePlayRelease", "--console=plain") `
+        -LogName $releaseLog
+
+    $aapt = Find-AaptExe
+    if (-not $aapt) {
+        Add-Step -Name "Manifest permission hygiene" -Status "FAIL" -Notes "Could not find aapt.exe in Android SDK."
+        return
+    }
+
+    $apkDir = Join-Path $repoRoot "app\build\outputs\apk\outsidePlay\release"
+    $apks = @(Get-ChildItem -LiteralPath $apkDir -Filter "*-release-unsigned.apk" -ErrorAction SilentlyContinue)
+    if ($apks.Count -eq 0) {
+        Add-Step -Name "Manifest permission hygiene" -Status "FAIL" -Notes "No outsidePlay release APKs found in $apkDir."
+        return
+    }
+
+    $forbiddenPermissions = @(
+        "com.android.vending.BILLING",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.USE_FULL_SCREEN_INTENT"
+    )
+    $badEntries = New-Object System.Collections.Generic.List[string]
+    foreach ($apk in $apks) {
+        $badging = & $aapt dump badging $apk.FullName
+        foreach ($permission in $forbiddenPermissions) {
+            if ($badging -match [regex]::Escape("uses-permission: name='$permission'")) {
+                $badEntries.Add("$($apk.Name): $permission")
+            }
+        }
+    }
+
+    if ($badEntries.Count -gt 0) {
+        Add-Step `
+            -Name "Manifest permission hygiene" `
+            -Status "FAIL" `
+            -Notes "Forbidden permissions present: $($badEntries -join '; ')"
+        return
+    }
+
+    Add-Step `
+        -Name "Manifest permission hygiene" `
+        -Status "PASS" `
+        -Notes "Release APKs do not declare Billing, full-screen intent or modify-audio-settings permissions."
+}
+
 function Get-AdbDevices {
     $lines = & adb devices
     return @(
@@ -222,6 +296,8 @@ try {
             ) `
             -LogName "01-local-release-gates.log"
     }
+
+    Test-ManifestPermissionHygiene
 
     if ($SkipEmulatorQa) {
         Add-Step -Name "Emulator DeviceSafe QA" -Status "SKIPPED" -Notes "Skipped by parameter."

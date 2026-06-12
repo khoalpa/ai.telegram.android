@@ -483,7 +483,7 @@ private fun TelegramLikeChatScreen(
             if (showMessageSkeleton && displayedMessages.isEmpty()) {
                 delay(MESSAGE_CONTENT_CROSSFADE_MS.toLong())
             }
-            displayedMessages = messages
+            displayedMessages = mergeDisplayedMessages(displayedMessages, messages)
             showMessageSkeleton = false
         } else if (displayedMessages.isEmpty()) {
             showMessageSkeleton = true
@@ -1192,9 +1192,11 @@ private fun TelegramLikeChatScreen(
                         onAttachAlbum = { albumPickerLauncher.launch("*/*") },
                         onCapturePhoto = {
                             if (pendingMedia.size < MAX_COMPOSER_MEDIA) {
-                                val uri = context.createComposerCameraUri()
-                                pendingCameraUri = uri
-                                cameraLauncher.launch(uri)
+                                runCatching { context.createComposerCameraUri() }
+                                    .onSuccess { uri ->
+                                        pendingCameraUri = uri
+                                        cameraLauncher.launch(uri)
+                                    }
                             }
                         },
                         onCreatePoll = { pollDialogOpen = true },

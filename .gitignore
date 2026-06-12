@@ -8,6 +8,7 @@ app/build/
 *.apk
 *.aab
 captures/
+.release/
 
 # Root-level QA captures and logs are device/account artifacts, not source.
 /*.png

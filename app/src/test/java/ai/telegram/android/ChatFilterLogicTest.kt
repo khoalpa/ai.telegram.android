@@ -50,6 +50,46 @@ class ChatFilterLogicTest {
         assertTrue(message(kind = MessageKind.File).matchesContentFilter(ChatContentFilter.Files))
     }
 
+    @Test
+    fun mergeDisplayedMessages_keepsCurrentChannelHistoryWhenIncomingSnapshotIsPartial() {
+        val current = (1L..51L).map { id ->
+            message(
+                id = id,
+                kind = MessageKind.Video,
+                mediaFileId = id.toInt(),
+                mediaLocalPath = ""
+            )
+        }
+        val updatedMessage = current.first().copy(mediaLocalPath = "/local/video.mp4")
+
+        val merged = mergeDisplayedMessages(current, listOf(updatedMessage))
+
+        assertEquals(51, merged.size)
+        assertEquals(51, merged.count { it.matchesContentFilter(ChatContentFilter.Media) })
+        assertEquals("/local/video.mp4", merged.single { it.id == updatedMessage.id }.mediaLocalPath)
+    }
+
+    @Test
+    fun mergeDisplayedMessages_replacesWithCompleteIncomingSnapshot() {
+        val current = (1L..3L).map { id -> message(id = id, kind = MessageKind.Video) }
+        val incoming = (1L..4L).map { id -> message(id = id, kind = MessageKind.Video) }
+
+        val merged = mergeDisplayedMessages(current, incoming)
+
+        assertEquals(incoming.map { it.id }, merged.map { it.id })
+    }
+
+    @Test
+    fun mergeDisplayedMessages_acceptsLargerShrinkAsCompleteSnapshot() {
+        val current = (1L..51L).map { id -> message(id = id, kind = MessageKind.Video) }
+        val incoming = (1L..40L).map { id -> message(id = id, kind = MessageKind.Video) }
+
+        val merged = mergeDisplayedMessages(current, incoming)
+
+        assertEquals(40, merged.size)
+        assertEquals(incoming.map { it.id }, merged.map { it.id })
+    }
+
     private fun chat(type: String): TelegramChat {
         return TelegramChat(
             id = 1L,
@@ -66,11 +106,14 @@ class ChatFilterLogicTest {
         translatedText: String = "",
         translationStatus: TranslationStatus = TranslationStatus.Ready,
         receivedAtMillis: Long = System.currentTimeMillis(),
-        kind: MessageKind = MessageKind.Text
+        kind: MessageKind = MessageKind.Text,
+        id: Long = 1L,
+        mediaFileId: Int = 0,
+        mediaLocalPath: String = ""
     ): TelegramMessage {
         return TelegramMessage(
             chatId = 1L,
-            id = 1L,
+            id = id,
             senderId = "user:1",
             chatTitle = "Chat",
             author = "Sender",
@@ -80,6 +123,8 @@ class ChatFilterLogicTest {
             detectedLanguage = "en",
             kind = kind,
             mediaSizeMb = 0,
+            mediaFileId = mediaFileId,
+            mediaLocalPath = mediaLocalPath,
             timestamp = "",
             receivedAtMillis = receivedAtMillis
         )

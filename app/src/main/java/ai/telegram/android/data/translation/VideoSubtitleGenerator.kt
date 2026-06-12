@@ -23,6 +23,7 @@ import com.google.android.gms.tasks.Task
 import com.google.mlkit.nl.languageid.LanguageIdentification
 import java.io.File
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -64,9 +65,18 @@ class VideoSubtitleGenerator(
         sourceLanguageCode: String = ""
     ): VideoSubtitleResult {
         val normalizedSourceLanguage = sourceLanguageCode.normalizedSpeechLanguageCode()
-        return when (mode) {
-            VideoSubtitleMode.Source -> generateSourceTranscript(videoFile, fileId, normalizedSourceLanguage)
-            VideoSubtitleMode.Vietnamese -> generateVietnameseTranscript(videoFile, fileId, normalizedSourceLanguage)
+        return try {
+            when (mode) {
+                VideoSubtitleMode.Source -> generateSourceTranscript(videoFile, fileId, normalizedSourceLanguage)
+                VideoSubtitleMode.Vietnamese -> generateVietnameseTranscript(videoFile, fileId, normalizedSourceLanguage)
+            }
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            VideoSubtitleResult.Unavailable(
+                error.localizedMessage
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "Khong tao duoc phu de video."
+            )
         }
     }
 
@@ -226,7 +236,9 @@ class VideoSubtitleGenerator(
 
     private suspend fun detectSourceLanguage(text: String): String? {
         if (text.isBlank()) return null
-        val languageIdentifier = LanguageIdentification.getClient()
+        val languageIdentifier = runCatching { LanguageIdentification.getClient() }
+            .getOrNull()
+            ?: return null
         return try {
             languageIdentifier.identifyLanguage(text).await()
                 .takeUnless { it == "und" }

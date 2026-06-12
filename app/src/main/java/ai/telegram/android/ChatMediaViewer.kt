@@ -1150,18 +1150,22 @@ internal fun FullScreenMediaViewer(
                 resources.getString(R.string.video_review_report_failed)
             }
             if (reportFile != null) {
-                val reportUri = FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    reportFile
-                )
-                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_STREAM, reportUri)
-                    putExtra(Intent.EXTRA_TEXT, reportFile.readText())
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                runCatching {
+                    val reportUri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        reportFile
+                    )
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_STREAM, reportUri)
+                        putExtra(Intent.EXTRA_TEXT, reportFile.readText())
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(Intent.createChooser(shareIntent, resources.getString(R.string.video_review_export_report)))
+                }.onFailure {
+                    reviewNotice = resources.getString(R.string.video_review_report_failed)
                 }
-                context.startActivity(Intent.createChooser(shareIntent, resources.getString(R.string.video_review_export_report)))
             }
         }
     }
@@ -2161,7 +2165,7 @@ internal fun Context.pendingComposerMedia(
     forcedKind: MessageKind? = null,
     highQualityPhoto: Boolean = false
 ): PendingComposerMedia {
-    val mimeType = contentResolver.getType(uri).orEmpty()
+    val mimeType = runCatching { contentResolver.getType(uri) }.getOrNull().orEmpty()
     val kind = forcedKind ?: when {
         mimeType.startsWith("image/") -> MessageKind.Image
         mimeType.startsWith("video/") -> MessageKind.Video
@@ -2188,38 +2192,44 @@ internal fun Context.createComposerCameraUri(): Uri {
 }
 
 private fun android.content.ContentResolver.displayName(uri: Uri): String? {
-    return query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-        if (cursor.moveToFirst()) {
-            cursor.getString(0)
-        } else {
-            null
+    return runCatching {
+        query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst() && !cursor.isNull(0)) {
+                cursor.getString(0)
+            } else {
+                null
+            }
         }
-    }
+    }.getOrNull()
 }
 
 internal fun android.content.ContentResolver.decodeComposerPreview(
     uri: Uri,
     maxEdgePx: Int = 512
 ): androidx.compose.ui.graphics.ImageBitmap? {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    openInputStream(uri)?.use { stream ->
-        BitmapFactory.decodeStream(stream, null, bounds)
-    }
-    val largestEdge = maxOf(bounds.outWidth, bounds.outHeight)
-    if (largestEdge <= 0) return null
-    var sampleSize = 1
-    while (largestEdge / sampleSize > maxEdgePx) {
-        sampleSize *= 2
-    }
-    val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-    return openInputStream(uri)?.use { stream ->
-        BitmapFactory.decodeStream(stream, null, options)?.asImageBitmap()
-    }
+    return runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, bounds)
+        }
+        val largestEdge = maxOf(bounds.outWidth, bounds.outHeight)
+        if (largestEdge <= 0) return@runCatching null
+        var sampleSize = 1
+        while (largestEdge / sampleSize > maxEdgePx) {
+            sampleSize *= 2
+        }
+        val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, options)?.asImageBitmap()
+        }
+    }.getOrNull()
 }
 
 internal fun CoroutineScope.copyPlainText(clipboard: androidx.compose.ui.platform.Clipboard, text: String) {
     launch {
-        clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(null, text)))
+        runCatching {
+            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(null, text)))
+        }
     }
 }
 

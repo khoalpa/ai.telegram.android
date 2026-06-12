@@ -1508,7 +1508,9 @@ private fun StoryPreviewDialog(
                 ) {
                     when (story.kind) {
                         MessageKind.Image -> {
-                            val bitmap = remember(localPath) { BitmapFactory.decodeFile(localPath) }
+                            val bitmap = remember(localPath) {
+                                runCatching { BitmapFactory.decodeFile(localPath) }.getOrNull()
+                            }
                             if (bitmap != null) {
                                 Image(
                                     bitmap = bitmap.asImageBitmap(),
@@ -1525,13 +1527,17 @@ private fun StoryPreviewDialog(
                                 modifier = Modifier.fillMaxSize(),
                                 factory = { viewContext ->
                                     VideoView(viewContext).apply {
-                                        setMediaController(MediaController(viewContext))
-                                        setVideoURI(Uri.fromFile(File(localPath)))
-                                        start()
+                                        runCatching {
+                                            setMediaController(MediaController(viewContext))
+                                            setVideoURI(Uri.fromFile(File(localPath)))
+                                            start()
+                                        }
                                     }
                                 },
                                 update = { videoView ->
-                                    videoView.setVideoURI(Uri.fromFile(File(localPath)))
+                                    runCatching {
+                                        videoView.setVideoURI(Uri.fromFile(File(localPath)))
+                                    }
                                 }
                             )
                         }

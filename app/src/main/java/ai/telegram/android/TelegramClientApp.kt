@@ -33,6 +33,7 @@ import ai.telegram.android.data.telegram.TelegramChatPermissionPreset
 import ai.telegram.android.data.telegram.TelegramClient
 import ai.telegram.android.data.telegram.TelegramCall
 import ai.telegram.android.data.telegram.TelegramCallMediaEngine
+import ai.telegram.android.data.telegram.TelegramCallProtocol
 import ai.telegram.android.data.telegram.TelegramCallState
 import ai.telegram.android.data.telegram.TelegramInlineBotResults
 import ai.telegram.android.data.telegram.TelegramPremiumFeatureInfo
@@ -298,7 +299,7 @@ fun Context.prepareOutgoingTelegramMedia(
     require(uri.scheme == "content" || uri.scheme == "file") {
         "Unsupported media source"
     }
-    val mimeType = contentResolver.getType(uri).orEmpty()
+    val mimeType = runCatching { contentResolver.getType(uri) }.getOrNull().orEmpty()
     contentResolver.sizeBytes(uri)?.let { sizeBytes ->
         require(sizeBytes <= MAX_OUTGOING_MEDIA_BYTES) {
             "File is larger than ${MAX_OUTGOING_MEDIA_BYTES / (1024L * 1024L)} MB"
@@ -376,23 +377,27 @@ private fun TelegramMessage.hasReadableMediaLocalFile(): Boolean {
 }
 
 private fun android.content.ContentResolver.displayName(uri: Uri): String? {
-    return query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-        if (cursor.moveToFirst()) {
-            cursor.getString(0)
-        } else {
-            null
+    return runCatching {
+        query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst() && !cursor.isNull(0)) {
+                cursor.getString(0)
+            } else {
+                null
+            }
         }
-    }
+    }.getOrNull()
 }
 
 private fun android.content.ContentResolver.sizeBytes(uri: Uri): Long? {
-    return query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
-        if (cursor.moveToFirst() && !cursor.isNull(0)) {
-            cursor.getLong(0).takeIf { it >= 0L }
-        } else {
-            null
+    return runCatching {
+        query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst() && !cursor.isNull(0)) {
+                cursor.getLong(0).takeIf { it >= 0L }
+            } else {
+                null
+            }
         }
-    }
+    }.getOrNull()
 }
 
 private fun InputStream.copyToLimit(output: OutputStream, maxBytes: Long) {
@@ -435,16 +440,19 @@ private fun File.cleanupOutgoingUploadCache(nowMillis: Long, maxBytes: Long) {
 }
 
 private fun Context.currentNetworkMode(): NetworkMode {
-    val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-    val network = connectivityManager.activeNetwork ?: return NetworkMode.MobileData
-    val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return NetworkMode.MobileData
-    return when {
-        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> NetworkMode.Wifi
-        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) &&
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING) -> NetworkMode.MobileData
-        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> NetworkMode.Roaming
-        else -> NetworkMode.MobileData
-    }
+    return runCatching {
+        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return@runCatching NetworkMode.MobileData
+        val network = connectivityManager.activeNetwork ?: return@runCatching NetworkMode.MobileData
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return@runCatching NetworkMode.MobileData
+        when {
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> NetworkMode.Wifi
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING) -> NetworkMode.MobileData
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> NetworkMode.Roaming
+            else -> NetworkMode.MobileData
+        }
+    }.getOrDefault(NetworkMode.MobileData)
 }
 
 private fun Context.loadBooleanSetting(key: String, defaultValue: Boolean): Boolean {
@@ -744,17 +752,21 @@ fun TelegramClientApp(
         }
     }
     val callMediaEngine = remember(context) {
-        TelegramCallMediaEngine(
-            context = context.applicationContext,
-            onSignalingData = { signalingData ->
-                tdLibClientRef.get()?.sendCallSignalingData(signalingData.callId, signalingData.data)
-            },
-            onError = { message ->
-                coroutineScope.launch {
-                    telegramOperationMessage = resources.getString(R.string.telegram_operation_failed, message)
+        if (ENABLE_CALL_ACTIONS) {
+            TelegramCallMediaEngine(
+                context = context.applicationContext,
+                onSignalingData = { signalingData ->
+                    tdLibClientRef.get()?.sendCallSignalingData(signalingData.callId, signalingData.data)
+                },
+                onError = { message ->
+                    coroutineScope.launch {
+                        telegramOperationMessage = resources.getString(R.string.telegram_operation_failed, message)
+                    }
                 }
-            }
-        )
+            )
+        } else {
+            null
+        }
     }
     val tdLibConfig = remember(tdLibRestartToken) { TdLibConfig.from(context) }
     val tdLibClient: TelegramClient = remember(tdLibConfig, callMediaEngine) {
@@ -885,16 +897,12 @@ fun TelegramClientApp(
                     }
                 }
                 coroutineScope.launch(Dispatchers.IO) {
-                    if (ENABLE_CALL_ACTIONS) {
-                        callMediaEngine.handleCallUpdate(call)
-                    } else {
-                        callMediaEngine.stop(call.id)
-                    }
+                    callMediaEngine?.handleCallUpdate(call)
                 }
             },
             onCallSignalingData = { signalingData ->
                 coroutineScope.launch(Dispatchers.IO) {
-                    callMediaEngine.handleSignalingData(signalingData)
+                    callMediaEngine?.handleSignalingData(signalingData)
                 }
             },
             onStory = { story ->
@@ -994,7 +1002,7 @@ fun TelegramClientApp(
                     telegramOperationMessage = resources.getString(R.string.telegram_operation_failed, message)
                 }
             },
-            callProtocolProvider = { callMediaEngine.protocol() }
+            callProtocolProvider = { callMediaEngine?.protocol() ?: TelegramCallProtocol() }
         )
     }
 
@@ -1067,7 +1075,7 @@ fun TelegramClientApp(
     }
 
     DisposableEffect(callMediaEngine) {
-        onDispose { callMediaEngine.close() }
+        onDispose { callMediaEngine?.close() }
     }
 
     val chatManagementActions = ChatManagementActions(
@@ -1198,7 +1206,7 @@ fun TelegramClientApp(
     )
 
     DisposableEffect(context) {
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 networkMode = context.currentNetworkMode()
@@ -1212,9 +1220,15 @@ fun TelegramClientApp(
                 networkMode = context.currentNetworkMode()
             }
         }
-        connectivityManager.registerNetworkCallback(NetworkRequest.Builder().build(), callback)
+        val registered = connectivityManager?.let { manager ->
+            runCatching {
+                manager.registerNetworkCallback(NetworkRequest.Builder().build(), callback)
+            }.isSuccess
+        } == true
         onDispose {
-            runCatching { connectivityManager.unregisterNetworkCallback(callback) }
+            if (registered) {
+                runCatching { connectivityManager?.unregisterNetworkCallback(callback) }
+            }
         }
     }
 
@@ -1972,7 +1986,7 @@ fun TelegramClientApp(
                     calls = telegramCalls.values.sortedByDescending { it.id },
                     contacts = contacts,
                     operationMessage = telegramOperationMessage,
-                    callActionsEnabled = ENABLE_CALL_ACTIONS && callMediaEngine.isAvailable,
+                    callActionsEnabled = ENABLE_CALL_ACTIONS && callMediaEngine?.isAvailable == true,
                     onStartCall = { userId, isVideo ->
                         tdLibClient.createCall(userId, isVideo)
                         telegramOperationMessage = context.operationPending(
