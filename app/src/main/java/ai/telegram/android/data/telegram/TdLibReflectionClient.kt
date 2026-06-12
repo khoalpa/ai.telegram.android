@@ -2604,11 +2604,7 @@ class TdLibReflectionClient(
         val message = json.optString("message", "TDLib error")
         val extra = json.optString("@extra")
         if (extra.startsWith("call:")) {
-            if (BuildConfig.DEBUG) {
-                Log.w(CALL_LOG_TAG, "tdlib error extra=$extra message=$message")
-            } else {
-                Log.w(CALL_LOG_TAG, "tdlib call error")
-            }
+            Log.w(CALL_LOG_TAG, "tdlib call error")
             onOperationError(message)
         }
         val isAuthenticationError = extra.startsWith("auth:") ||
@@ -2867,8 +2863,7 @@ class TdLibReflectionClient(
         val type = function.optString("@type")
         if (type in setOf("createCall", "acceptCall", "discardCall", "sendCallSignalingData")) {
             logCallDebug(
-                "sendJson type=$type extra=${function.optString("@extra")} user=${function.optLong("user_id", 0L)} " +
-                    "call=${function.optInt("call_id", 0)} video=${function.optBoolean("is_video", false)}"
+                "sendJson type=$type video=${function.optBoolean("is_video", false)}"
             )
         }
         runCatching {
@@ -2897,16 +2892,15 @@ class TdLibReflectionClient(
     private fun logJsonCall(source: String, call: JSONObject?) {
         if (call == null) {
             if (BuildConfig.DEBUG) {
-                Log.w(CALL_LOG_TAG, "$source call=null")
+                Log.w(CALL_LOG_TAG, "$source empty call payload")
             }
             return
         }
         val state = call.optJSONObject("state")
         logCallDebug(
-            "$source id=${call.optInt("id", 0)} user=${call.optLong("user_id", 0L)} " +
-                "out=${call.optBoolean("is_outgoing", false)} video=${call.optBoolean("is_video", false)} " +
+            "$source out=${call.optBoolean("is_outgoing", false)} video=${call.optBoolean("is_video", false)} " +
                 "state=${state?.optString("@type").orEmpty()} created=${state?.optBoolean("is_created", false) ?: false} " +
-                "received=${state?.optBoolean("is_received", false) ?: false} extra=${call.optString("@extra")}"
+                "received=${state?.optBoolean("is_received", false) ?: false}"
         )
     }
 

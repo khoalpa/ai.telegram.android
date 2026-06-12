@@ -55,11 +55,11 @@ class TelegramCallMediaEngine(
 
     init {
         engine?.setSignalingDataCallback { callId, data ->
-            logDebug("signalingData callId=$callId bytes=${data.size}")
+            logDebug("signaling data received bytes=${data.size}")
             onSignalingData(TelegramCallSignalingData(callId.toInt(), data))
         }
         engine?.setConnectionChangeCallback { callId, info ->
-            logDebug("connection callId=$callId kind=${info.kind} state=${info.state}")
+            logDebug("connection changed kind=${info.kind} state=${info.state}")
         }
     }
 
@@ -80,7 +80,7 @@ class TelegramCallMediaEngine(
     fun handleCallUpdate(call: TelegramCall) {
         when (call.state) {
             TelegramCallState.Ready -> {
-                logDebug("ready callId=${call.id} outgoing=${call.isOutgoing} video=${call.isVideo}")
+                logDebug("call ready outgoing=${call.isOutgoing} video=${call.isVideo}")
                 connect(call)
             }
             TelegramCallState.Discarded,
@@ -143,11 +143,11 @@ class TelegramCallMediaEngine(
             prepareAudioRoute(video = call.isVideo)
             val callId = call.id.toLong()
             ntgCalls.createP2PCall(callId)
-            logDebug("created P2P callId=$callId")
+            logDebug("created P2P call")
             ntgCalls.setStreamSources(callId, StreamMode.CAPTURE, mediaDescription(video = call.isVideo))
-            logDebug("stream sources set callId=$callId")
+            logDebug("stream sources set")
             ntgCalls.skipExchange(callId, call.encryptionKey, call.isOutgoing)
-            logDebug("exchange skipped callId=$callId outgoing=${call.isOutgoing}")
+            logDebug("exchange skipped outgoing=${call.isOutgoing}")
             ntgCalls.connectP2P(
                 callId,
                 call.servers.map { it.toRtcServer() },
@@ -155,14 +155,10 @@ class TelegramCallMediaEngine(
                 call.allowP2p
             )
             activeCalls += call.id
-            logDebug("connectP2P requested callId=$callId servers=${call.servers.size}")
+            logDebug("connectP2P requested servers=${call.servers.size}")
         }.onFailure { error ->
             restoreAudioRoute()
-            if (BuildConfig.DEBUG) {
-                Log.e(TAG, "connect failed callId=${call.id}", error)
-            } else {
-                Log.e(TAG, "connect failed", error)
-            }
+            Log.e(TAG, "connect failed", error)
             onError("Could not start call media: ${error.message ?: error::class.java.simpleName}")
         }
     }
@@ -191,7 +187,7 @@ class TelegramCallMediaEngine(
             .put("id", deviceName)
             .put("is_front", runCatching { enumerator.isFrontFacing(deviceName) }.getOrDefault(false))
             .toString()
-        logDebug("camera metadata selected name=$deviceName")
+        logDebug("camera metadata selected")
         return metadata
     }
 

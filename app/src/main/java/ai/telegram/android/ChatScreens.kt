@@ -40,7 +40,6 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.OpenableColumns
-import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
@@ -463,12 +462,7 @@ private fun TelegramLikeChatScreen(
                 items(filteredChats, key = { it.id }) { chat ->
                     ChatListRow(
                         chat = chat,
-                        onClick = {
-                            if (BuildConfig.DEBUG) {
-                                Log.d(ChatTapLogTag, "ChatScreen row tap chatId=${chat.id} title=${chat.title}")
-                            }
-                            onSelectChat(chat)
-                        }
+                        onClick = { onSelectChat(chat) }
                     )
                 }
             }
@@ -1281,8 +1275,6 @@ private fun TelegramLikeChatScreen(
         }
     }
 }
-
-private const val ChatTapLogTag = "AiTelegramChatTap"
 
 @Composable
 private fun ChatSearchAndFilters(

@@ -72,7 +72,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
-import android.util.Log
 import android.webkit.MimeTypeMap
 import android.widget.MediaController
 import android.widget.VideoView
@@ -218,7 +217,6 @@ private val ENABLE_BOT_WEB_APP_DATA_ACTIONS =
     OptionalTelegramFeatureGates.isEnabled(OptionalTelegramFeature.BotWebAppData)
 private const val MESSAGE_PAGE_SIZE = 80
 private const val MAX_MESSAGE_PAGE_SIZE = 800
-private const val ChatTapLogTag = "AiTelegramChatTap"
 
 data class PreparedOutgoingMedia(
     val localPath: String,
@@ -1481,16 +1479,7 @@ fun TelegramClientApp(
                     videoSubtitleColor = videoSubtitleColor,
                     contentTranslationTargetLanguage = contentTranslationTargetLanguage,
                     onSelectChat = { chat ->
-                        if (BuildConfig.DEBUG) {
-                            Log.d(
-                                ChatTapLogTag,
-                                "TelegramClientApp onSelectChat chatId=${chat.id} previousSelectedChatId=$selectedChatId"
-                            )
-                        }
                         selectedChatId = chat.id
-                        if (BuildConfig.DEBUG) {
-                            Log.d(ChatTapLogTag, "TelegramClientApp selectedChatId updated to $selectedChatId")
-                        }
                         requestInitialChatHistory(chat.id)
                     },
                     onBackToChats = { selectedChatId = null },
