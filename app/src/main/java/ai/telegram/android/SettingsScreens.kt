@@ -65,6 +65,8 @@ fun SettingsScreen(
     tdLibStatus: TdLibStatus,
     translatedOnly: Boolean,
     onTranslatedOnlyChange: (Boolean) -> Unit,
+    contentTranslationLanguage: ContentTranslationLanguage,
+    onContentTranslationLanguageChange: (ContentTranslationLanguage) -> Unit,
     allowAdultContent: Boolean,
     onAllowAdultContentChange: (Boolean) -> Unit,
     notificationsEnabled: Boolean,
@@ -83,6 +85,8 @@ fun SettingsScreen(
     onVideoSubtitleColorChange: (VideoSubtitleColor) -> Unit,
     themeMode: AppThemeMode,
     onThemeModeChange: (AppThemeMode) -> Unit,
+    interfaceLanguage: InterfaceLanguage,
+    onInterfaceLanguageChange: (InterfaceLanguage) -> Unit,
     onSendPhone: (String) -> Unit,
     onSendCode: (String) -> Unit,
     onSendPassword: (String) -> Unit,
@@ -96,6 +100,8 @@ fun SettingsScreen(
         tdLibStatus = tdLibStatus,
         translatedOnly = translatedOnly,
         onTranslatedOnlyChange = onTranslatedOnlyChange,
+        contentTranslationLanguage = contentTranslationLanguage,
+        onContentTranslationLanguageChange = onContentTranslationLanguageChange,
         allowAdultContent = allowAdultContent,
         onAllowAdultContentChange = onAllowAdultContentChange,
         notificationsEnabled = notificationsEnabled,
@@ -114,6 +120,8 @@ fun SettingsScreen(
         onVideoSubtitleColorChange = onVideoSubtitleColorChange,
         themeMode = themeMode,
         onThemeModeChange = onThemeModeChange,
+        interfaceLanguage = interfaceLanguage,
+        onInterfaceLanguageChange = onInterfaceLanguageChange,
         onSendPhone = onSendPhone,
         onSendCode = onSendCode,
         onSendPassword = onSendPassword,
@@ -399,6 +407,8 @@ private fun TelegramLikeSettingsScreen(
     tdLibStatus: TdLibStatus,
     translatedOnly: Boolean,
     onTranslatedOnlyChange: (Boolean) -> Unit,
+    contentTranslationLanguage: ContentTranslationLanguage,
+    onContentTranslationLanguageChange: (ContentTranslationLanguage) -> Unit,
     allowAdultContent: Boolean,
     onAllowAdultContentChange: (Boolean) -> Unit,
     notificationsEnabled: Boolean,
@@ -417,6 +427,8 @@ private fun TelegramLikeSettingsScreen(
     onVideoSubtitleColorChange: (VideoSubtitleColor) -> Unit,
     themeMode: AppThemeMode,
     onThemeModeChange: (AppThemeMode) -> Unit,
+    interfaceLanguage: InterfaceLanguage,
+    onInterfaceLanguageChange: (InterfaceLanguage) -> Unit,
     onSendPhone: (String) -> Unit,
     onSendCode: (String) -> Unit,
     onSendPassword: (String) -> Unit,
@@ -515,6 +527,10 @@ private fun TelegramLikeSettingsScreen(
                 selectedMode = themeMode,
                 onModeChange = onThemeModeChange
             )
+            SettingsInterfaceLanguageRow(
+                selectedLanguage = interfaceLanguage,
+                onLanguageChange = onInterfaceLanguageChange
+            )
         }
 
         SectionHeader(title = stringResource(R.string.settings_section_notifications))
@@ -549,17 +565,9 @@ private fun TelegramLikeSettingsScreen(
 
         SectionHeader(title = stringResource(R.string.settings_section_translation))
         SettingsGroup {
-            SettingsRow(
-                title = stringResource(R.string.interface_language),
-                subtitle = stringResource(R.string.settings_interface_language_fixed_subtitle),
-                value = "${stringResource(R.string.vietnamese)} / ${stringResource(R.string.english)}",
-                iconRes = R.drawable.ic_ai_language
-            )
-            SettingsRow(
-                title = stringResource(R.string.target_language),
-                subtitle = stringResource(R.string.settings_target_language_fixed_subtitle),
-                value = stringResource(R.string.vietnamese),
-                iconRes = R.drawable.ic_ai_translate
+            SettingsContentTranslationLanguageRow(
+                selectedLanguage = contentTranslationLanguage,
+                onLanguageChange = onContentTranslationLanguageChange
             )
             SettingsSwitchRow(
                 title = stringResource(R.string.translated_only),
@@ -1348,6 +1356,90 @@ private fun SettingsThemeModeRow(
 }
 
 @Composable
+private fun SettingsContentTranslationLanguageRow(
+    selectedLanguage: ContentTranslationLanguage,
+    onLanguageChange: (ContentTranslationLanguage) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = AiThemeTokens.RowPaddingHorizontal, vertical = AiThemeTokens.ListSpacing),
+        verticalArrangement = Arrangement.spacedBy(AiThemeTokens.ListSpacing)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SettingsLeadingIcon(iconRes = R.drawable.ic_ai_translate, contentDescription = stringResource(R.string.target_language))
+            Spacer(Modifier.width(AiThemeTokens.ListSpacing))
+            Column(verticalArrangement = Arrangement.spacedBy(AiThemeTokens.MicroSpacing)) {
+                Text(
+                    stringResource(R.string.target_language),
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = stringResource(R.string.settings_target_language_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(AiThemeTokens.CompactSpacing),
+            verticalArrangement = Arrangement.spacedBy(AiThemeTokens.CompactSpacing)
+        ) {
+            ContentTranslationLanguage.entries.forEach { language ->
+                FilterChip(
+                    selected = selectedLanguage == language,
+                    onClick = { onLanguageChange(language) },
+                    label = { Text(stringResource(language.labelRes)) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsInterfaceLanguageRow(
+    selectedLanguage: InterfaceLanguage,
+    onLanguageChange: (InterfaceLanguage) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = AiThemeTokens.RowPaddingHorizontal, vertical = AiThemeTokens.ListSpacing),
+        verticalArrangement = Arrangement.spacedBy(AiThemeTokens.ListSpacing)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SettingsLeadingIcon(iconRes = R.drawable.ic_ai_language, contentDescription = stringResource(R.string.interface_language))
+            Spacer(Modifier.width(AiThemeTokens.ListSpacing))
+            Column(verticalArrangement = Arrangement.spacedBy(AiThemeTokens.MicroSpacing)) {
+                Text(
+                    stringResource(R.string.interface_language),
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = stringResource(R.string.settings_interface_language_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(AiThemeTokens.CompactSpacing),
+            verticalArrangement = Arrangement.spacedBy(AiThemeTokens.CompactSpacing)
+        ) {
+            InterfaceLanguage.entries.forEach { language ->
+                FilterChip(
+                    selected = selectedLanguage == language,
+                    onClick = { onLanguageChange(language) },
+                    label = { Text(stringResource(language.labelRes)) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun SettingsSubtitleColorRow(
     selectedColor: VideoSubtitleColor,
     onColorChange: (VideoSubtitleColor) -> Unit
@@ -1745,6 +1837,8 @@ private fun SettingsScreenPreview() {
             tdLibStatus = TdLibStatus.Ready,
             translatedOnly = true,
             onTranslatedOnlyChange = {},
+            contentTranslationLanguage = ContentTranslationLanguage.Vietnamese,
+            onContentTranslationLanguageChange = {},
             allowAdultContent = true,
             onAllowAdultContentChange = {},
             notificationsEnabled = true,
@@ -1763,6 +1857,8 @@ private fun SettingsScreenPreview() {
             onVideoSubtitleColorChange = {},
             themeMode = AppThemeMode.System,
             onThemeModeChange = {},
+            interfaceLanguage = InterfaceLanguage.Vietnamese,
+            onInterfaceLanguageChange = {},
             onSendPhone = {},
             onSendCode = {},
             onSendPassword = {},

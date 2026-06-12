@@ -182,6 +182,7 @@ fun ChatScreen(
     videoSubtitlesEnabled: Boolean,
     videoSourceLanguage: VideoSourceLanguage,
     videoSubtitleColor: VideoSubtitleColor,
+    contentTranslationTargetLanguage: String = ContentTranslationLanguage.DefaultCode,
     onSelectChat: (TelegramChat) -> Unit,
     onBackToChats: () -> Unit,
     hiddenHashes: Set<String>,
@@ -229,6 +230,7 @@ fun ChatScreen(
         videoSubtitlesEnabled = videoSubtitlesEnabled,
         videoSourceLanguage = videoSourceLanguage,
         videoSubtitleColor = videoSubtitleColor,
+        contentTranslationTargetLanguage = contentTranslationTargetLanguage,
         onSelectChat = onSelectChat,
         onBackToChats = onBackToChats,
         hiddenHashes = hiddenHashes,
@@ -279,6 +281,7 @@ private fun TelegramLikeChatScreen(
     videoSubtitlesEnabled: Boolean,
     videoSourceLanguage: VideoSourceLanguage,
     videoSubtitleColor: VideoSubtitleColor,
+    contentTranslationTargetLanguage: String,
     onSelectChat: (TelegramChat) -> Unit,
     onBackToChats: () -> Unit,
     hiddenHashes: Set<String>,
@@ -495,12 +498,19 @@ private fun TelegramLikeChatScreen(
             displayedMessages = emptyList()
         }
     }
-    val baseVisibleMessages = remember(displayedMessages, translatedOnly, allowAdultContent, hiddenHashes) {
+    val baseVisibleMessages = remember(
+        displayedMessages,
+        translatedOnly,
+        allowAdultContent,
+        hiddenHashes,
+        contentTranslationTargetLanguage
+    ) {
         ChatMessageVisibilityPolicy.baseVisibleMessages(
             messages = displayedMessages,
             translatedOnly = translatedOnly,
             allowAdultContent = allowAdultContent,
-            hiddenHashes = hiddenHashes
+            hiddenHashes = hiddenHashes,
+            targetLanguage = contentTranslationTargetLanguage
         )
     }
     val senderFilterOptions = remember(baseVisibleMessages) {
@@ -530,7 +540,13 @@ private fun TelegramLikeChatScreen(
             emptyList()
         } else {
             visibleMessages.mapIndexedNotNull { index, message ->
-                index.takeIf { MessagePrivacyPolicy.matchesReadableQuery(message, normalizedMessageQuery) }
+                index.takeIf {
+                    MessagePrivacyPolicy.matchesReadableQuery(
+                        message,
+                        normalizedMessageQuery,
+                        targetLanguage = contentTranslationTargetLanguage
+                    )
+                }
             }
         }
     }
@@ -951,6 +967,7 @@ private fun TelegramLikeChatScreen(
                 videoSubtitlesEnabled = videoSubtitlesEnabled,
                 videoSourceLanguage = videoSourceLanguage,
                 videoSubtitleColor = videoSubtitleColor,
+                contentTranslationTargetLanguage = contentTranslationTargetLanguage,
                 activeVideoKey = activeVideoKey,
                 onActiveVideoChange = { activeVideoKey = it },
                 onDownloadMedia = onDownloadMedia,
@@ -1102,6 +1119,7 @@ private fun TelegramLikeChatScreen(
                             videoSubtitlesEnabled = videoSubtitlesEnabled,
                             videoSourceLanguage = videoSourceLanguage,
                             videoSubtitleColor = videoSubtitleColor,
+                            contentTranslationTargetLanguage = contentTranslationTargetLanguage,
                             activeVideoKey = activeVideoKey,
                             onActiveVideoChange = { activeVideoKey = it },
                             onOpenCache = onOpenCache,
@@ -2679,6 +2697,7 @@ private fun MessageCard(
     videoSubtitlesEnabled: Boolean,
     videoSourceLanguage: VideoSourceLanguage,
     videoSubtitleColor: VideoSubtitleColor,
+    contentTranslationTargetLanguage: String,
     activeVideoKey: String?,
     onActiveVideoChange: (String?) -> Unit,
     onOpenCache: () -> Unit,
@@ -2702,9 +2721,14 @@ private fun MessageCard(
     onToggleSelected: () -> Unit = {}
 ) {
     val isTelegramRestrictedNotice = MessagePrivacyPolicy.isTelegramRestrictedNotice(message)
-    val readableText = MessagePrivacyPolicy.readableText(message)
-    val readableTranslatedText = MessagePrivacyPolicy.readableTranslatedText(message)
-    val sourceFallbackText = if (MessagePrivacyPolicy.shouldRenderSourceText(message)) {
+    val readableText = MessagePrivacyPolicy.readableText(message, targetLanguage = contentTranslationTargetLanguage)
+    val readableTranslatedText = MessagePrivacyPolicy.readableTranslatedText(
+        message,
+        targetLanguage = contentTranslationTargetLanguage
+    )
+    val sourceFallbackText = if (
+        MessagePrivacyPolicy.shouldRenderSourceText(message, targetLanguage = contentTranslationTargetLanguage)
+    ) {
         message.originalText.trim()
     } else {
         ""
@@ -2918,6 +2942,7 @@ private fun MessageCard(
                     videoSubtitlesEnabled = videoSubtitlesEnabled,
                     videoSourceLanguage = videoSourceLanguage,
                     videoSubtitleColor = videoSubtitleColor,
+                    contentTranslationTargetLanguage = contentTranslationTargetLanguage,
                     activeVideoKey = activeVideoKey,
                     onActiveVideoChange = onActiveVideoChange,
                     onDownloadMedia = onDownloadMedia,
@@ -2944,6 +2969,7 @@ private fun MessageCard(
                     videoSubtitlesEnabled = videoSubtitlesEnabled,
                     videoSourceLanguage = videoSourceLanguage,
                     videoSubtitleColor = videoSubtitleColor,
+                    contentTranslationTargetLanguage = contentTranslationTargetLanguage,
                     activeVideoKey = activeVideoKey,
                     onActiveVideoChange = onActiveVideoChange,
                     onDownloadMedia = onDownloadMedia,
@@ -2971,6 +2997,7 @@ private fun MessageCard(
                     videoSubtitlesEnabled = videoSubtitlesEnabled,
                     videoSourceLanguage = videoSourceLanguage,
                     videoSubtitleColor = videoSubtitleColor,
+                    contentTranslationTargetLanguage = contentTranslationTargetLanguage,
                     activeVideoKey = activeVideoKey,
                     onActiveVideoChange = onActiveVideoChange,
                     onDownloadMedia = onDownloadMedia,
@@ -3016,6 +3043,7 @@ private fun MessageCard(
                     videoSubtitlesEnabled = videoSubtitlesEnabled,
                     videoSourceLanguage = videoSourceLanguage,
                     videoSubtitleColor = videoSubtitleColor,
+                    contentTranslationTargetLanguage = contentTranslationTargetLanguage,
                     activeVideoKey = activeVideoKey,
                     onActiveVideoChange = onActiveVideoChange,
                     onDownloadMedia = onDownloadMedia,
@@ -3039,7 +3067,7 @@ private fun MessageCard(
                 ) {
                     MessageActionMenu(
                         expanded = actionMenuOpen,
-                        canCopy = message.readableTextForCopy().isNotBlank(),
+                        canCopy = message.readableTextForCopy(contentTranslationTargetLanguage).isNotBlank(),
                         canResend = canResend,
                         onDismiss = { actionMenuOpen = false },
                         onSelect = {
@@ -3048,7 +3076,7 @@ private fun MessageCard(
                         },
                         onCopy = {
                             actionMenuOpen = false
-                            val copyText = message.readableTextForCopy()
+                            val copyText = message.readableTextForCopy(contentTranslationTargetLanguage)
                             if (copyText.isNotBlank()) {
                                 clipboardScope.copyPlainText(clipboard, copyText)
                                 actionFeedback = copiedFeedback
@@ -3348,8 +3376,8 @@ private fun ChatContentFilter.toTelegramMessageSearchFilter(): TelegramMessageSe
 
 private const val SHARED_MEDIA_DAY_MILLIS = 24L * 60L * 60L * 1000L
 
-private fun TelegramMessage.readableTextForCopy(): String {
-    return MessagePrivacyPolicy.readableText(this)
+private fun TelegramMessage.readableTextForCopy(targetLanguage: String = translationTargetLanguage): String {
+    return MessagePrivacyPolicy.readableText(this, targetLanguage = targetLanguage)
 }
 
 private fun TelegramMessage.selectionKey(): String = "$chatId:$id"

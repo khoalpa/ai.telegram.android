@@ -59,11 +59,26 @@ class MessagePrivacyPolicyTest {
         val message = message(
             originalText = "Noi dung tieng Viet",
             translatedText = "Noi dung tieng Viet",
-            detectedLanguage = "vi"
+            detectedLanguage = "vi",
+            targetLanguage = "vi"
         )
 
         assertEquals("Noi dung tieng Viet", MessagePrivacyPolicy.readableTranslatedText(message))
         assertTrue(MessagePrivacyPolicy.matchesReadableQuery(message, "tieng Viet"))
+    }
+
+    @Test
+    fun readableText_ignoresTranslationForDifferentCurrentTargetLanguage() {
+        val message = message(
+            originalText = "Original English",
+            translatedText = "Ban dich tieng Viet",
+            targetLanguage = "vi"
+        )
+
+        assertEquals("", MessagePrivacyPolicy.readableTranslatedText(message, targetLanguage = "en"))
+        assertEquals("Original English", MessagePrivacyPolicy.readableText(message, targetLanguage = "en"))
+        assertFalse(MessagePrivacyPolicy.matchesReadableQuery(message, "tieng Viet", targetLanguage = "en"))
+        assertTrue(MessagePrivacyPolicy.matchesReadableQuery(message, "Original English", targetLanguage = "en"))
     }
 
     @Test
@@ -99,7 +114,8 @@ class MessagePrivacyPolicyTest {
         originalText: String = "Original English",
         translatedText: String = "",
         status: TranslationStatus = TranslationStatus.Ready,
-        detectedLanguage: String = "en"
+        detectedLanguage: String = "en",
+        targetLanguage: String = "vi"
     ): TelegramMessage {
         return TelegramMessage(
             chatId = 1L,
@@ -111,6 +127,7 @@ class MessagePrivacyPolicyTest {
             translatedText = translatedText,
             translationStatus = status,
             detectedLanguage = detectedLanguage,
+            translationTargetLanguage = targetLanguage,
             kind = MessageKind.Video,
             mediaSizeMb = 1,
             timestamp = "10:00"

@@ -203,6 +203,7 @@ private const val MAX_OUTGOING_UPLOAD_CACHE_BYTES = 1024L * 1024L * 1024L
 private const val OUTGOING_UPLOAD_RETENTION_MILLIS = 7L * 24L * 60L * 60L * 1000L
 private const val APP_SETTINGS_PREFS = "ai_telegram_settings"
 private const val PREF_TRANSLATED_ONLY = "translated_only"
+private const val PREF_CONTENT_TRANSLATION_LANGUAGE = "content_translation_language"
 private const val PREF_ALLOW_ADULT_CONTENT = "allow_adult_content"
 private const val PREF_NOTIFICATIONS_ENABLED = "notifications_enabled"
 private const val PREF_NOTIFICATION_PREVIEWS_ENABLED = TelegramNotificationManager.NOTIFICATION_PREVIEWS_SETTING_KEY
@@ -559,7 +560,9 @@ fun TelegramClientApp(
     onAndroidEntryIntentHandled: () -> Unit = {},
     isAppForeground: Boolean = true,
     themeMode: AppThemeMode = AppThemeMode.System,
-    onThemeModeChange: (AppThemeMode) -> Unit = {}
+    onThemeModeChange: (AppThemeMode) -> Unit = {},
+    interfaceLanguage: InterfaceLanguage = InterfaceLanguage.Vietnamese,
+    onInterfaceLanguageChange: (InterfaceLanguage) -> Unit = {}
 ) {
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -573,17 +576,29 @@ fun TelegramClientApp(
     val translationJobRepository = appViewModel.translationJobRepository
     val mlKitModelManager = remember { runCatching { MlKitModelManager() } }
     val commonVietnamesePairs = remember { VietnameseTranslationPairs.common }
+    var contentTranslationLanguageName by rememberSaveable {
+        mutableStateOf(
+            context.loadStringSetting(
+                PREF_CONTENT_TRANSLATION_LANGUAGE,
+                ContentTranslationLanguage.Vietnamese.name
+            )
+        )
+    }
+    val contentTranslationLanguage = remember(contentTranslationLanguageName) {
+        ContentTranslationLanguage.fromName(contentTranslationLanguageName)
+    }
+    val contentTranslationTargetLanguage = contentTranslationLanguage.code
     val mediaPolicy = remember { MediaDownloadPolicy() }
     var networkMode by remember { mutableStateOf(context.currentNetworkMode()) }
     val currentNetworkMode by rememberUpdatedState(networkMode)
-    val translationQueue = remember {
+    val translationQueue = remember(contentTranslationTargetLanguage) {
         TranslationQueue(
             context = context.applicationContext,
             messageRepository = messageRepository,
             translationJobRepository = translationJobRepository,
             preflight = mlKitModelManager.getOrNull()?.let { MlKitTranslationPreflight(it) },
             networkModeProvider = { currentNetworkMode },
-            targetLanguage = "vi"
+            targetLanguage = contentTranslationTargetLanguage
         )
     }
     val coroutineScope = rememberCoroutineScope()
@@ -644,7 +659,7 @@ fun TelegramClientApp(
     val requestedChatMetadataIds = remember(tdLibRestartToken) { mutableSetOf<Long>() }
     val requestedAutoHistoryChatIds = remember(tdLibRestartToken) { mutableSetOf<Long>() }
     var queuedViewedTranslationUid by remember(tdLibRestartToken) { mutableStateOf<String?>(null) }
-    val cachedTranslationUids = remember(tdLibRestartToken) { mutableSetOf<String>() }
+    val cachedTranslationUids = remember(tdLibRestartToken, contentTranslationTargetLanguage) { mutableSetOf<String>() }
     val chats by appViewModel.chats.collectAsState(initial = emptyList())
     val senders by appViewModel.senders.collectAsState(initial = emptyList())
     val contacts by appViewModel.contacts.collectAsState(initial = emptyList())
@@ -802,7 +817,10 @@ fun TelegramClientApp(
             },
             onMessage = { message ->
                 coroutineScope.launch {
-                    appViewModel.upsertIncomingMessage(message, message.pendingPreview(context))
+                    appViewModel.upsertIncomingMessage(
+                        message,
+                        message.pendingPreview(context, contentTranslationTargetLanguage)
+                    )
                     if (
                         shouldNotifyIncomingTelegramMessage(
                             notificationsEnabled = notificationsEnabled,
@@ -1303,17 +1321,20 @@ fun TelegramClientApp(
         selectedChatId?.let(telegramNotifications::cancelChat)
     }
 
-    LaunchedEffect(messages) {
+    LaunchedEffect(messages, contentTranslationTargetLanguage) {
         messages.forEach { message ->
             val uid = message.uid()
-            val readableText = MessagePrivacyPolicy.readableTranslatedText(message)
+            val readableText = MessagePrivacyPolicy.readableTranslatedText(
+                message,
+                targetLanguage = contentTranslationTargetLanguage
+            )
             if (
                 message.translationStatus == TranslationStatus.Ready &&
                 message.originalText.isNotBlank() &&
                 readableText.isNotBlank() &&
                 cachedTranslationUids.add(uid)
             ) {
-                translationCache.getOrPut(message.originalText, "vi") { readableText }
+                translationCache.getOrPut(message.originalText, contentTranslationTargetLanguage) { readableText }
             }
         }
         cacheStats = appViewModel.cacheStats(languagePackSizeMb = estimatedLanguagePackSizeMb(mlKitModels))
@@ -1458,6 +1479,7 @@ fun TelegramClientApp(
                     videoSubtitlesEnabled = videoSubtitlesEnabled,
                     videoSourceLanguage = videoSourceLanguage,
                     videoSubtitleColor = videoSubtitleColor,
+                    contentTranslationTargetLanguage = contentTranslationTargetLanguage,
                     onSelectChat = { chat ->
                         Log.d(
                             ChatTapLogTag,
@@ -1473,15 +1495,19 @@ fun TelegramClientApp(
                         coroutineScope.launch {
                             val uid = message.uid()
                             var queuedWork = false
-                            if (message.shouldTranslateWhenViewed() && queuedViewedTranslationUid != uid) {
+                            val translationViewKey = "$uid:$contentTranslationTargetLanguage"
+                            if (
+                                message.shouldTranslateWhenViewed(contentTranslationTargetLanguage) &&
+                                queuedViewedTranslationUid != translationViewKey
+                            ) {
                                 when (translationQueue.enqueueOnly(message)) {
                                     TranslationQueueResult.Queued -> {
-                                        queuedViewedTranslationUid = uid
+                                        queuedViewedTranslationUid = translationViewKey
                                         queuedWork = true
                                     }
                                     is TranslationQueueResult.UpdatedOnly,
                                     is TranslationQueueResult.Skipped -> {
-                                        queuedViewedTranslationUid = uid
+                                        queuedViewedTranslationUid = translationViewKey
                                     }
                                     is TranslationQueueResult.Blocked -> Unit
                                 }
@@ -2430,6 +2456,11 @@ fun TelegramClientApp(
                                 translatedOnly = it
                                 context.saveBooleanSetting(PREF_TRANSLATED_ONLY, it)
                             },
+                            contentTranslationLanguage = contentTranslationLanguage,
+                            onContentTranslationLanguageChange = {
+                                contentTranslationLanguageName = it.name
+                                context.saveStringSetting(PREF_CONTENT_TRANSLATION_LANGUAGE, it.name)
+                            },
                             allowAdultContent = allowAdultContent,
                             onAllowAdultContentChange = {
                                 allowAdultContent = it
@@ -2476,6 +2507,8 @@ fun TelegramClientApp(
                             },
                             themeMode = themeMode,
                             onThemeModeChange = onThemeModeChange,
+                            interfaceLanguage = interfaceLanguage,
+                            onInterfaceLanguageChange = onInterfaceLanguageChange,
                             onSendPhone = { tdLibClient.setPhoneNumber(it) },
                             onSendCode = { tdLibClient.checkCode(it) },
                             onSendPassword = { tdLibClient.checkPassword(it) },
@@ -2811,11 +2844,14 @@ fun AppTab.navigationIconRes(): Int {
     }
 }
 
-private fun TelegramMessage.pendingPreview(context: android.content.Context): String {
-    val readableText = MessagePrivacyPolicy.readableTranslatedText(this)
+private fun TelegramMessage.pendingPreview(
+    context: android.content.Context,
+    targetLanguage: String = translationTargetLanguage
+): String {
+    val readableText = MessagePrivacyPolicy.readableTranslatedText(this, targetLanguage = targetLanguage)
     if (readableText.isNotBlank()) return readableText
     if (originalText.isNotBlank()) {
-        if (MessagePrivacyPolicy.shouldRenderSourceText(this)) return originalText
+        if (MessagePrivacyPolicy.shouldRenderSourceText(this, targetLanguage = targetLanguage)) return originalText
         return context.getString(R.string.translation_hidden)
     }
     return when (kind) {
@@ -2830,12 +2866,13 @@ private fun TelegramMessage.pendingPreview(context: android.content.Context): St
     }
 }
 
-private fun TelegramMessage.shouldTranslateWhenViewed(): Boolean {
+private fun TelegramMessage.shouldTranslateWhenViewed(targetLanguage: String): Boolean {
     if (originalText.isBlank()) return false
     if (translationFailureReason == TranslationFailureReason.NonTranslatable) return false
+    if (!translationTargetLanguage.equals(targetLanguage, ignoreCase = true)) return true
     if (
         translationStatus == TranslationStatus.Ready &&
-        MessagePrivacyPolicy.readableTranslatedText(this).isBlank()
+        MessagePrivacyPolicy.readableTranslatedText(this, targetLanguage = targetLanguage).isBlank()
     ) {
         return true
     }

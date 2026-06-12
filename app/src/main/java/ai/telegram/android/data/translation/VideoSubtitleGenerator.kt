@@ -62,13 +62,20 @@ class VideoSubtitleGenerator(
         videoFile: File,
         fileId: Int = 0,
         mode: VideoSubtitleMode = VideoSubtitleMode.Source,
-        sourceLanguageCode: String = ""
+        sourceLanguageCode: String = "",
+        targetLanguage: String = VIETNAMESE_LANGUAGE_CODE
     ): VideoSubtitleResult {
         val normalizedSourceLanguage = sourceLanguageCode.normalizedSpeechLanguageCode()
+        val normalizedTargetLanguage = targetLanguage.baseLanguageCode().ifBlank { VIETNAMESE_LANGUAGE_CODE }
         return try {
             when (mode) {
                 VideoSubtitleMode.Source -> generateSourceTranscript(videoFile, fileId, normalizedSourceLanguage)
-                VideoSubtitleMode.Vietnamese -> generateVietnameseTranscript(videoFile, fileId, normalizedSourceLanguage)
+                VideoSubtitleMode.Vietnamese -> generateTranslatedTranscript(
+                    videoFile = videoFile,
+                    fileId = fileId,
+                    sourceLanguageCode = normalizedSourceLanguage,
+                    targetLanguage = normalizedTargetLanguage
+                )
             }
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
@@ -156,10 +163,11 @@ class VideoSubtitleGenerator(
         )
     }
 
-    private suspend fun generateVietnameseTranscript(
+    private suspend fun generateTranslatedTranscript(
         videoFile: File,
         fileId: Int,
-        sourceLanguageCode: String
+        sourceLanguageCode: String,
+        targetLanguage: String
     ): VideoSubtitleResult {
         val sourceResult = generateSourceTranscript(videoFile, fileId, sourceLanguageCode)
         if (sourceResult !is VideoSubtitleResult.Success) return sourceResult
@@ -167,7 +175,7 @@ class VideoSubtitleGenerator(
         val sourceLanguageTag = sourceResult.sourceLanguageCode.ifBlank {
             sourceLanguageCode.baseLanguageCode()
         }
-        if (sourceLanguageTag == VIETNAMESE_LANGUAGE_CODE) {
+        if (sourceLanguageTag == targetLanguage) {
             return sourceResult
         }
         val translationProviderVersion = "$SOURCE_TRANSCRIPT_PROVIDER_VERSION:${sourceLanguageCode.cacheLanguageSuffix()}+${translationProvider.providerVersion}"
@@ -175,7 +183,7 @@ class VideoSubtitleGenerator(
         subtitleCacheRepository?.get(
             fileId = fileId,
             videoFile = videoFile,
-            targetLanguage = VIETNAMESE_LANGUAGE_CODE,
+            targetLanguage = targetLanguage,
             providerVersion = translationProviderVersion
         )?.let { cache ->
             if (cache.cues.isNotEmpty()) {
@@ -198,7 +206,7 @@ class VideoSubtitleGenerator(
             when (
                 val translation = translationProvider.translate(
                     text = cue.text,
-                    targetLanguage = VIETNAMESE_LANGUAGE_CODE,
+                    targetLanguage = targetLanguage,
                     sourceLanguage = sourceLanguageTag
                 )
             ) {
@@ -215,13 +223,13 @@ class VideoSubtitleGenerator(
             }
         }
         if (translatedCues.isEmpty()) {
-            return VideoSubtitleResult.Unavailable("Khong tao duoc transcript tieng Viet.")
+            return VideoSubtitleResult.Unavailable("Khong tao duoc transcript da dich.")
         }
 
         subtitleCacheRepository?.put(
             fileId = fileId,
             videoFile = videoFile,
-            targetLanguage = VIETNAMESE_LANGUAGE_CODE,
+            targetLanguage = targetLanguage,
             providerVersion = translationProviderVersion,
             sourceText = sourceResult.sourceText,
             sourceLanguageCode = translatedSourceLanguageCode,

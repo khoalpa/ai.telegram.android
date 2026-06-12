@@ -706,9 +706,9 @@
     <string name="settings_section_privacy">Privacy</string>
     <string name="settings_section_notifications">Notifications</string>
     <string name="interface_language">Interface language</string>
-    <string name="settings_interface_language_fixed_subtitle">This build includes Vietnamese and English resources; in-app language switching is not enabled yet.</string>
+    <string name="settings_interface_language_subtitle">Choose the display language for screens inside the app.</string>
     <string name="target_language">Content translation language</string>
-    <string name="settings_target_language_fixed_subtitle">The translation pipeline is currently fixed to Vietnamese.</string>
+    <string name="settings_target_language_subtitle">Translate messages and subtitles to your selected language.</string>
     <string name="settings_translated_only_subtitle">Hide source text in the reading interface when a translation exists.</string>
     <string name="settings_auto_play_video_subtitle">Play videos automatically once enough media has downloaded.</string>
     <string name="settings_video_subtitles_subtitle">Create original-audio transcripts while watching full-screen videos.</string>

@@ -121,6 +121,7 @@ internal fun MediaBlock(
     videoSubtitlesEnabled: Boolean,
     videoSourceLanguage: VideoSourceLanguage,
     videoSubtitleColor: VideoSubtitleColor,
+    contentTranslationTargetLanguage: String = ContentTranslationLanguage.DefaultCode,
     activeVideoKey: String?,
     onActiveVideoChange: (String?) -> Unit,
     onDownloadMedia: (Int, MessageKind) -> Unit,
@@ -160,6 +161,7 @@ internal fun MediaBlock(
         videoSubtitlesEnabled = videoSubtitlesEnabled,
         videoSourceLanguage = videoSourceLanguage,
         videoSubtitleColor = videoSubtitleColor,
+        contentTranslationTargetLanguage = contentTranslationTargetLanguage,
         activeVideoKey = activeVideoKey,
         onActiveVideoChange = onActiveVideoChange,
         onDownloadMedia = onDownloadMedia,
@@ -179,6 +181,7 @@ private fun MediaPreviewContent(
     videoSubtitlesEnabled: Boolean,
     videoSourceLanguage: VideoSourceLanguage,
     videoSubtitleColor: VideoSubtitleColor,
+    contentTranslationTargetLanguage: String,
     activeVideoKey: String?,
     onActiveVideoChange: (String?) -> Unit,
     onDownloadMedia: (Int, MessageKind) -> Unit,
@@ -404,6 +407,7 @@ private fun MediaPreviewContent(
             videoSubtitlesEnabled = videoSubtitlesEnabled,
             videoSourceLanguage = videoSourceLanguage,
             videoSubtitleColor = videoSubtitleColor,
+            contentTranslationTargetLanguage = contentTranslationTargetLanguage,
             autoPlayVideo = autoPlayVideo || playWhenReady,
             activeVideoKey = activeVideoKey,
             onActiveVideoChange = onActiveVideoChange,
@@ -722,6 +726,7 @@ internal fun FullScreenMediaViewer(
     videoSubtitlesEnabled: Boolean,
     videoSourceLanguage: VideoSourceLanguage,
     videoSubtitleColor: VideoSubtitleColor,
+    contentTranslationTargetLanguage: String = ContentTranslationLanguage.DefaultCode,
     activeVideoKey: String?,
     onActiveVideoChange: (String?) -> Unit,
     onDownloadMedia: (Int, MessageKind) -> Unit,
@@ -922,7 +927,8 @@ internal fun FullScreenMediaViewer(
         renderState.videoFile?.absolutePath,
         videoSubtitlesEnabled,
         videoSourceLanguage,
-        subtitleMode
+        subtitleMode,
+        contentTranslationTargetLanguage
     ) {
         mutableStateOf<VideoSubtitleUiState>(VideoSubtitleUiState.Idle)
     }
@@ -993,6 +999,7 @@ internal fun FullScreenMediaViewer(
         videoSubtitlesEnabled,
         videoSourceLanguage,
         subtitleMode,
+        contentTranslationTargetLanguage,
         hasSpeechPermission
     ) {
         val videoFile = renderState.videoFile
@@ -1014,7 +1021,8 @@ internal fun FullScreenMediaViewer(
                 videoFile = videoFile,
                 fileId = selectedMessage.mediaFileId,
                 mode = subtitleMode,
-                sourceLanguageCode = videoSourceLanguage.speechLanguageTag
+                sourceLanguageCode = videoSourceLanguage.speechLanguageTag,
+                targetLanguage = contentTranslationTargetLanguage
             )
         ) {
             is VideoSubtitleResult.Success -> VideoSubtitleUiState.Ready(
@@ -1338,6 +1346,7 @@ internal fun FullScreenMediaViewer(
                             transcriptExpanded = transcriptExpanded,
                             subtitleMode = subtitleMode,
                             sourceLanguageCode = (subtitleState as? VideoSubtitleUiState.Ready)?.sourceLanguageCode.orEmpty(),
+                            contentTranslationTargetLanguage = contentTranslationTargetLanguage,
                             reviewNotice = reviewNotice,
                             onCycleSpeed = {
                                 playbackSpeed = when (playbackSpeed) {
@@ -1465,6 +1474,7 @@ private fun VideoReviewControls(
     transcriptExpanded: Boolean,
     subtitleMode: VideoSubtitleMode,
     sourceLanguageCode: String,
+    contentTranslationTargetLanguage: String,
     reviewNotice: String,
     onCycleSpeed: () -> Unit,
     onBookmark: () -> Unit,
@@ -1511,7 +1521,9 @@ private fun VideoReviewControls(
                                 VideoReviewChipLabel(
                                     text = when (mode) {
                                         VideoSubtitleMode.Source -> sourceLanguageCode.sourceLanguageDisplayName()
-                                        VideoSubtitleMode.Vietnamese -> stringResource(R.string.video_subtitle_mode_vietnamese)
+                                        VideoSubtitleMode.Vietnamese -> stringResource(
+                                            ContentTranslationLanguage.fromCode(contentTranslationTargetLanguage).labelRes
+                                        )
                                     },
                                     selected = selected
                                 )

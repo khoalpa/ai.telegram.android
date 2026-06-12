@@ -15,7 +15,8 @@ enum class TranslationSkipReason {
     NumericOnly,
     CodeLike,
     TooShort,
-    AlreadyVietnamese
+    AlreadyVietnamese,
+    AlreadyTargetLanguage
 }
 
 sealed interface TranslationPreflightResult {
@@ -108,7 +109,10 @@ open class TranslationPreflight(
         val source = TranslateLanguage.fromLanguageTag(sourceLanguage)
             ?: return TranslationPreflightResult.UnsupportedLanguage(sourceLanguage)
         if (source == target) {
-            return TranslationPreflightResult.Skip(TranslationSkipReason.AlreadyVietnamese, detectedLanguage = sourceLanguage)
+            return TranslationPreflightResult.Skip(
+                TranslationSkipReason.AlreadyTargetLanguage,
+                detectedLanguage = sourceLanguage
+            )
         }
         val downloaded = downloadedLanguageCodes()
         val required = requiredDownloadedModelCodes(sourceLanguage, targetLanguage)
@@ -199,7 +203,10 @@ fun TranslationPreflightResult.failureReason(): TranslationFailureReason {
         is TranslationPreflightResult.UnsupportedLanguage -> TranslationFailureReason.UnsupportedLanguage
         TranslationPreflightResult.UnknownSource -> TranslationFailureReason.UndetectedLanguage
         TranslationPreflightResult.Ready -> TranslationFailureReason.None
-        is TranslationPreflightResult.Skip -> if (this.reason == TranslationSkipReason.AlreadyVietnamese) {
+        is TranslationPreflightResult.Skip -> if (
+            this.reason == TranslationSkipReason.AlreadyVietnamese ||
+            this.reason == TranslationSkipReason.AlreadyTargetLanguage
+        ) {
             TranslationFailureReason.None
         } else {
             TranslationFailureReason.NonTranslatable

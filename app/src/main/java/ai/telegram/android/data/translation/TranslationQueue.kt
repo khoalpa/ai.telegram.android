@@ -43,7 +43,8 @@ class TranslationQueue(
         val preflightResult = preflight?.check(message.originalText, targetLanguage)
         when (val result = preflightResult) {
             is TranslationPreflightResult.Skip -> {
-                val isAlreadyTargetLanguage = result.reason == TranslationSkipReason.AlreadyVietnamese
+                val isAlreadyTargetLanguage = result.reason == TranslationSkipReason.AlreadyVietnamese ||
+                    result.reason == TranslationSkipReason.AlreadyTargetLanguage
                 messageRepository?.updateTranslation(
                     message = message,
                     translatedText = if (isAlreadyTargetLanguage) message.originalText else "",

@@ -9,8 +9,10 @@ object ChatMessageVisibilityPolicy {
         messages: List<TelegramMessage>,
         translatedOnly: Boolean,
         allowAdultContent: Boolean,
-        hiddenHashes: Set<String>
+        hiddenHashes: Set<String>,
+        targetLanguage: String = ""
     ): List<TelegramMessage> {
+        val effectiveTargetLanguage = targetLanguage.ifBlank { null }
         return messages
             .filter { message ->
                 isVisibleBeforeTranslationFilter(
@@ -20,7 +22,10 @@ object ChatMessageVisibilityPolicy {
                 )
             }
             .filter { message ->
-                !translatedOnly || shouldKeepInTranslatedOnlyView(message)
+                !translatedOnly || shouldKeepInTranslatedOnlyView(
+                    message,
+                    targetLanguage = effectiveTargetLanguage ?: message.translationTargetLanguage
+                )
             }
             .asReversed()
     }
@@ -46,8 +51,11 @@ object ChatMessageVisibilityPolicy {
         return true
     }
 
-    private fun shouldKeepInTranslatedOnlyView(message: TelegramMessage): Boolean {
-        return message.translationStatus == TranslationStatus.Ready ||
-            MessagePrivacyPolicy.shouldRenderSourceText(message)
+    private fun shouldKeepInTranslatedOnlyView(message: TelegramMessage, targetLanguage: String): Boolean {
+        return (
+            message.translationStatus == TranslationStatus.Ready &&
+                message.translationTargetLanguage.equals(targetLanguage, ignoreCase = true)
+            ) ||
+            MessagePrivacyPolicy.shouldRenderSourceText(message, targetLanguage = targetLanguage)
     }
 }

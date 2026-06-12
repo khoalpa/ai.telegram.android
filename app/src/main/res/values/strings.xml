@@ -25,8 +25,8 @@
     <string name="android_share_select_chat">Nội dung share đã sẵn sàng. Chọn một chat để thêm vào composer.</string>
     <string name="android_share_added_to_composer">Đã thêm nội dung share vào composer.</string>
     <string name="shortcut_chats_short">Chats</string>
-    <string name="shortcut_chats_long">Open chats</string>
-    <string name="shortcut_search_short">Search</string>
+    <string name="shortcut_chats_long">Mở chats</string>
+    <string name="shortcut_search_short">Tìm kiếm</string>
     <string name="shortcut_search_long">Search Telegram</string>
     <string name="shortcut_cache_short">Cache</string>
     <string name="shortcut_cache_long">Open cache</string>
@@ -599,7 +599,7 @@
     <string name="video_source_language">Ng&#244;n ng&#7919; &#226;m g&#7889;c</string>
     <string name="settings_video_source_language_subtitle">D&#249;ng l&#224;m ng&#244;n ng&#7919; ngu&#7891;n cho nh&#7853;n di&#7879;n gi&#7885;ng n&#243;i, d&#7883;ch v&#224; ph&#7909; &#273;&#7873; video.</string>
     <string name="video_source_language_auto">T&#7921; &#273;&#7897;ng</string>
-    <string name="video_source_language_english">Ti&#7871;ng Ảnh</string>
+    <string name="video_source_language_english">Ti&#7871;ng Anh</string>
     <string name="video_source_language_vietnamese">Ti&#7871;ng Vi&#7879;t</string>
     <string name="video_source_language_chinese">Ti&#7871;ng Trung</string>
     <string name="video_source_language_japanese">Ti&#7871;ng Nh&#7853;t</string>
@@ -697,9 +697,9 @@
     <string name="theme_light">S&#225;ng</string>
     <string name="theme_dark">T&#7889;i</string>
     <string name="interface_language">Ngôn ngữ giao diện</string>
-    <string name="settings_interface_language_fixed_subtitle">Bản này có sẵn tiếng Việt và tiếng Ảnh; đổi ngôn ngữ trong app chưa được bật.</string>
+    <string name="settings_interface_language_subtitle">Ch&#7885;n ng&#244;n ng&#7919; hi&#7875;n th&#7883; cho c&#225;c m&#224;n h&#236;nh trong app.</string>
     <string name="target_language">Ngôn ngữ dịch nội dung</string>
-    <string name="settings_target_language_fixed_subtitle">Pipeline dịch hiện cố định sang tiếng Việt.</string>
+    <string name="settings_target_language_subtitle">D&#7883;ch tin nh&#7855;n v&#224; ph&#7909; &#273;&#7873; sang ng&#244;n ng&#7919; b&#7841;n ch&#7885;n.</string>
     <string name="settings_translated_only_subtitle">&#7848;n n&#7897;i dung g&#7889;c trong giao di&#7879;n &#273;&#7885;c khi c&#243; b&#7843;n d&#7883;ch.</string>
     <string name="settings_auto_play_video_subtitle">T&#7921; ph&#225;t video khi media &#273;&#227; t&#7843;i &#273;&#7911; &#273;&#7875; xem.</string>
     <string name="settings_video_subtitles_subtitle">T&#7841;o transcript/ph&#7909; &#273;&#7873; t&#7915; &#226;m g&#7889;c khi xem video to&#224;n m&#224;n h&#236;nh.</string>
