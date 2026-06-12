@@ -714,6 +714,8 @@
     <string name="settings_video_subtitles_subtitle">Create original-audio transcripts while watching full-screen videos.</string>
     <string name="notifications">Message notifications</string>
     <string name="settings_notifications_subtitle">Show a system notification when a new Telegram message arrives.</string>
+    <string name="notification_previews">Show notification content</string>
+    <string name="settings_notification_previews_subtitle">Off by default to hide chat names and message content on the lock screen and notification shade.</string>
     <string name="notifications_permission_needed">Android needs notification permission before the app can alert you about new messages.</string>
     <string name="notifications_permission_action">Allow notifications</string>
     <string name="notification_channel_messages_name">Telegram messages</string>
@@ -721,6 +723,7 @@
     <string name="notification_channel_calls_name">Telegram calls</string>
     <string name="notification_channel_calls_description">Notifications and ringtone when TDLib receives an incoming Telegram call.</string>
     <string name="notification_new_message">New message</string>
+    <string name="notification_preview_hidden">Open the app to view the message.</string>
     <string name="notification_messages_summary_title">New Telegram messages</string>
     <string name="notification_messages_summary_text">Open the app to view recent chats.</string>
     <plurals name="notification_messages_summary_count">

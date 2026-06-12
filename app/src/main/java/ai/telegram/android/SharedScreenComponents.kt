@@ -136,7 +136,6 @@ fun IconActionButton(
     ) {
         SafeActionIcon(
             iconRes = iconRes,
-            fallbackText = contentDescription,
             contentDescription = contentDescription,
             modifier = Modifier.size(AiThemeTokens.IconSize),
             tint = contentColor
@@ -177,7 +176,6 @@ fun CompactActionButton(
     ) {
         SafeActionIcon(
             iconRes = iconRes,
-            fallbackText = label,
             contentDescription = label,
             modifier = Modifier.size(AiThemeTokens.ControlIconSize),
             tint = contentColor
@@ -213,7 +211,6 @@ fun AppSearchField(
         ) {
             SafeActionIcon(
                 iconRes = R.drawable.ic_ai_search,
-                fallbackText = placeholder,
                 contentDescription = placeholder,
                 modifier = Modifier.size(AiThemeTokens.IconSize),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -373,7 +370,6 @@ fun AppListItem(
             }
             SafeActionIcon(
                 iconRes = R.drawable.ic_ai_chevron_right,
-                fallbackText = ">",
                 contentDescription = title,
                 modifier = Modifier.size(AiThemeTokens.ControlIconSize),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -385,29 +381,17 @@ fun AppListItem(
 @Composable
 private fun SafeActionIcon(
     iconRes: Int,
-    fallbackText: String,
     contentDescription: String,
     modifier: Modifier,
     tint: androidx.compose.ui.graphics.Color
 ) {
-    if (iconRes.isAndroidFrameworkResource()) {
-        Text(
-            text = fallbackText.firstOrNull()?.uppercaseChar()?.toString() ?: "*",
-            color = tint,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold
-        )
-    } else {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = contentDescription,
-            modifier = modifier,
-            tint = tint
-        )
-    }
+    Icon(
+        painter = painterResource(iconRes),
+        contentDescription = contentDescription,
+        modifier = modifier,
+        tint = tint
+    )
 }
-
-private fun Int.isAndroidFrameworkResource(): Boolean = (this ushr 24) == 0x01
 
 @Composable
 fun AppCard(
@@ -450,7 +434,6 @@ fun LeadingIconTile(
         Box(contentAlignment = Alignment.Center) {
             SafeActionIcon(
                 iconRes = iconRes,
-                fallbackText = contentDescription ?: "",
                 contentDescription = contentDescription ?: "",
                 modifier = Modifier.size(iconSize),
                 tint = contentColor

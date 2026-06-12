@@ -69,6 +69,8 @@ fun SettingsScreen(
     onAllowAdultContentChange: (Boolean) -> Unit,
     notificationsEnabled: Boolean,
     onNotificationsEnabledChange: (Boolean) -> Unit,
+    notificationPreviewsEnabled: Boolean,
+    onNotificationPreviewsEnabledChange: (Boolean) -> Unit,
     notificationPermissionGranted: Boolean,
     onRequestNotificationPermission: () -> Unit,
     autoPlayVideo: Boolean,
@@ -98,6 +100,8 @@ fun SettingsScreen(
         onAllowAdultContentChange = onAllowAdultContentChange,
         notificationsEnabled = notificationsEnabled,
         onNotificationsEnabledChange = onNotificationsEnabledChange,
+        notificationPreviewsEnabled = notificationPreviewsEnabled,
+        onNotificationPreviewsEnabledChange = onNotificationPreviewsEnabledChange,
         notificationPermissionGranted = notificationPermissionGranted,
         onRequestNotificationPermission = onRequestNotificationPermission,
         autoPlayVideo = autoPlayVideo,
@@ -399,6 +403,8 @@ private fun TelegramLikeSettingsScreen(
     onAllowAdultContentChange: (Boolean) -> Unit,
     notificationsEnabled: Boolean,
     onNotificationsEnabledChange: (Boolean) -> Unit,
+    notificationPreviewsEnabled: Boolean,
+    onNotificationPreviewsEnabledChange: (Boolean) -> Unit,
     notificationPermissionGranted: Boolean,
     onRequestNotificationPermission: () -> Unit,
     autoPlayVideo: Boolean,
@@ -523,6 +529,13 @@ private fun TelegramLikeSettingsScreen(
                 checked = notificationsEnabled,
                 onCheckedChange = onNotificationsEnabledChange,
                 iconRes = R.drawable.ic_ai_notifications
+            )
+            SettingsSwitchRow(
+                title = stringResource(R.string.notification_previews),
+                subtitle = stringResource(R.string.settings_notification_previews_subtitle),
+                checked = notificationPreviewsEnabled,
+                onCheckedChange = onNotificationPreviewsEnabledChange,
+                iconRes = R.drawable.ic_ai_shield
             )
             if (!notificationPermissionGranted) {
                 SettingsActionRow(
@@ -1736,6 +1749,8 @@ private fun SettingsScreenPreview() {
             onAllowAdultContentChange = {},
             notificationsEnabled = true,
             onNotificationsEnabledChange = {},
+            notificationPreviewsEnabled = false,
+            onNotificationPreviewsEnabledChange = {},
             notificationPermissionGranted = true,
             onRequestNotificationPermission = {},
             autoPlayVideo = false,

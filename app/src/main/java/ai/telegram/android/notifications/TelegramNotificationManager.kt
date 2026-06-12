@@ -83,10 +83,21 @@ class TelegramNotificationManager(
         ensureMessageChannel()
         if (!canPostNotifications()) return
 
-        val title = message.chatTitle
+        val previewsEnabled = areMessagePreviewsEnabled(appContext)
+        val privateTitle = message.chatTitle
             .ifBlank { message.author }
             .ifBlank { appContext.getString(R.string.notification_new_message) }
-        val text = message.notificationText()
+        val privateText = message.notificationText()
+        val title = if (previewsEnabled) {
+            privateTitle
+        } else {
+            appContext.getString(R.string.notification_new_message)
+        }
+        val text = if (previewsEnabled) {
+            privateText
+        } else {
+            appContext.getString(R.string.notification_preview_hidden)
+        }
         val contentIntent = openChatIntent(message.chatId)
         activeMessageNotifications[message.chatId] = MessageNotificationSnapshot(
             chatId = message.chatId,
@@ -103,6 +114,8 @@ class TelegramNotificationManager(
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setGroup(GROUP_MESSAGES)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(redactedMessageNotification(contentIntent))
             .addAction(replyAction(message.chatId))
             .addAction(markReadAction(message.chatId))
             .build()
@@ -213,6 +226,7 @@ class TelegramNotificationManager(
 
     private fun notifyMessageGroupSummary() {
         if (!canPostNotifications()) return
+        val previewsEnabled = areMessagePreviewsEnabled(appContext)
         val snapshots = activeMessageNotifications.values.toList()
         val summaryText = if (snapshots.isEmpty()) {
             appContext.getString(R.string.notification_messages_summary_text)
@@ -223,24 +237,30 @@ class TelegramNotificationManager(
                 snapshots.size
             )
         }
-        val inboxStyle = NotificationCompat.InboxStyle()
-            .setBigContentTitle(appContext.getString(R.string.notification_messages_summary_title))
-            .setSummaryText(summaryText)
-        snapshots.takeLast(MAX_SUMMARY_LINES).forEach { snapshot ->
-            inboxStyle.addLine("${snapshot.title}: ${snapshot.text}")
-        }
-        val summary = NotificationCompat.Builder(appContext, CHANNEL_MESSAGES)
+        val summaryBuilder = NotificationCompat.Builder(appContext, CHANNEL_MESSAGES)
             .setSmallIcon(R.drawable.ic_ai_chat)
             .setContentTitle(appContext.getString(R.string.notification_messages_summary_title))
             .setContentText(summaryText)
-            .setStyle(inboxStyle)
             .setContentIntent(openAppIntent())
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setGroup(GROUP_MESSAGES)
             .setGroupSummary(true)
-            .build()
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(redactedMessageSummaryNotification(summaryText))
+        if (previewsEnabled) {
+            val inboxStyle = NotificationCompat.InboxStyle()
+                .setBigContentTitle(appContext.getString(R.string.notification_messages_summary_title))
+                .setSummaryText(summaryText)
+            snapshots.takeLast(MAX_SUMMARY_LINES).forEach { snapshot ->
+                inboxStyle.addLine("${snapshot.title}: ${snapshot.text}")
+            }
+            summaryBuilder.setStyle(inboxStyle)
+        } else {
+            summaryBuilder.setStyle(NotificationCompat.BigTextStyle().bigText(summaryText))
+        }
+        val summary = summaryBuilder.build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(
                 appContext,
@@ -364,7 +384,44 @@ class TelegramNotificationManager(
             }.getOrDefault(false)
     }
 
+    private fun redactedMessageNotification(contentIntent: PendingIntent): Notification {
+        return NotificationCompat.Builder(appContext, CHANNEL_MESSAGES)
+            .setSmallIcon(R.drawable.ic_ai_chat)
+            .setContentTitle(appContext.getString(R.string.notification_new_message))
+            .setContentText(appContext.getString(R.string.notification_preview_hidden))
+            .setContentIntent(contentIntent)
+            .setAutoCancel(true)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setGroup(GROUP_MESSAGES)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .build()
+    }
+
+    private fun redactedMessageSummaryNotification(summaryText: String): Notification {
+        return NotificationCompat.Builder(appContext, CHANNEL_MESSAGES)
+            .setSmallIcon(R.drawable.ic_ai_chat)
+            .setContentTitle(appContext.getString(R.string.notification_messages_summary_title))
+            .setContentText(summaryText)
+            .setContentIntent(openAppIntent())
+            .setAutoCancel(true)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setGroup(GROUP_MESSAGES)
+            .setGroupSummary(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .build()
+    }
+
     private fun notifySafely(id: Int, notification: Notification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                appContext,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
         runCatching {
             notificationManager.notify(id, notification)
         }.onFailure { error ->
@@ -408,8 +465,10 @@ class TelegramNotificationManager(
         private const val CHANNEL_CALLS = "telegram_calls"
         private const val GROUP_MESSAGES = "telegram_messages"
         private const val TAG = "TelegramNotifications"
+        private const val APP_SETTINGS_PREFS = "ai_telegram_settings"
         private const val MESSAGE_GROUP_SUMMARY_NOTIFICATION_ID = 0x061A1000
         private const val MAX_SUMMARY_LINES = 5
+        const val NOTIFICATION_PREVIEWS_SETTING_KEY = "notification_previews_enabled"
 
         fun hasPostNotificationsPermission(context: Context): Boolean {
             return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
@@ -417,6 +476,12 @@ class TelegramNotificationManager(
                     context,
                     Manifest.permission.POST_NOTIFICATIONS
                 ) == PackageManager.PERMISSION_GRANTED
+        }
+
+        fun areMessagePreviewsEnabled(context: Context): Boolean {
+            return context.applicationContext
+                .getSharedPreferences(APP_SETTINGS_PREFS, Context.MODE_PRIVATE)
+                .getBoolean(NOTIFICATION_PREVIEWS_SETTING_KEY, false)
         }
 
         private fun notificationId(chatId: Long): Int {

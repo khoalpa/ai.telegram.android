@@ -205,6 +205,7 @@ private const val APP_SETTINGS_PREFS = "ai_telegram_settings"
 private const val PREF_TRANSLATED_ONLY = "translated_only"
 private const val PREF_ALLOW_ADULT_CONTENT = "allow_adult_content"
 private const val PREF_NOTIFICATIONS_ENABLED = "notifications_enabled"
+private const val PREF_NOTIFICATION_PREVIEWS_ENABLED = TelegramNotificationManager.NOTIFICATION_PREVIEWS_SETTING_KEY
 private const val PREF_AUTO_PLAY_VIDEO = "auto_play_video"
 private const val PREF_VIDEO_SUBTITLES_ENABLED = "video_subtitles_enabled"
 private const val PREF_VIDEO_SOURCE_LANGUAGE = "video_source_language"
@@ -611,6 +612,9 @@ fun TelegramClientApp(
     }
     var notificationsEnabled by rememberSaveable {
         mutableStateOf(context.loadBooleanSetting(PREF_NOTIFICATIONS_ENABLED, true))
+    }
+    var notificationPreviewsEnabled by rememberSaveable {
+        mutableStateOf(context.loadBooleanSetting(PREF_NOTIFICATION_PREVIEWS_ENABLED, false))
     }
     var autoPlayVideo by rememberSaveable {
         mutableStateOf(context.loadBooleanSetting(PREF_AUTO_PLAY_VIDEO, true))
@@ -2442,6 +2446,11 @@ fun TelegramClientApp(
                                 ) {
                                     requestNotificationPermission()
                                 }
+                            },
+                            notificationPreviewsEnabled = notificationPreviewsEnabled,
+                            onNotificationPreviewsEnabledChange = {
+                                notificationPreviewsEnabled = it
+                                context.saveBooleanSetting(PREF_NOTIFICATION_PREVIEWS_ENABLED, it)
                             },
                             notificationPermissionGranted = notificationPermissionGranted,
                             onRequestNotificationPermission = { requestNotificationPermission() },
