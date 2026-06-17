@@ -1,5 +1,7 @@
 package ai.telegram.android.work
 
+import ai.telegram.android.R
+import ai.telegram.android.core.ContentNormalizer
 import ai.telegram.android.data.BlacklistRepository
 import ai.telegram.android.data.ChatRepository
 import ai.telegram.android.data.MessageRepository
@@ -9,7 +11,6 @@ import ai.telegram.android.data.TranslationJobStatus
 import ai.telegram.android.data.local.AppDatabase
 import ai.telegram.android.data.translation.MlKitOnDeviceTranslationProvider
 import ai.telegram.android.data.translation.TranslationProcessor
-import ai.telegram.android.R
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
@@ -53,20 +54,44 @@ class TranslationWorker(
                 if (jobs.isEmpty()) return Result.success()
 
                 jobs.forEach { job ->
-                    translationJobRepository.markRunning(job.messageUid)
+                    translationJobRepository.markRunning(job.jobKey)
                     val message = messageRepository.find(job.messageUid)
                     if (message == null) {
-                        translationJobRepository.complete(job.messageUid)
+                        when (TranslationRetryPolicy.nextFailedStatus(job.attempts)) {
+                            TranslationJobStatus.Failed -> translationJobRepository.markFailed(job.jobKey)
+                            TranslationJobStatus.Pending -> translationJobRepository.markPending(job.jobKey)
+                            TranslationJobStatus.Running -> Unit
+                        }
                         return@forEach
                     }
 
-                    val result = processor.process(message, job.targetLanguage)
+                    val currentContentHash = ContentNormalizer.contentHash(message.originalText)
+                    if (job.contentHash.isNotBlank() && job.contentHash != currentContentHash) {
+                        translationJobRepository.complete(job.jobKey)
+                        if (message.originalText.isNotBlank()) {
+                            translationJobRepository.enqueue(message, job.targetLanguage)
+                        }
+                        return@forEach
+                    }
+
+                    val expectedContentHash = job.contentHash.ifBlank { currentContentHash }
+                    val result = processor.process(
+                        message = message,
+                        targetLanguage = job.targetLanguage,
+                        expectedContentHash = expectedContentHash
+                    )
                     if (result.completed) {
-                        translationJobRepository.complete(job.messageUid)
+                        translationJobRepository.complete(job.jobKey)
+                    } else if (result.staleContent) {
+                        translationJobRepository.complete(job.jobKey)
+                        val latest = messageRepository.find(job.messageUid)
+                        if (latest != null && latest.originalText.isNotBlank()) {
+                            translationJobRepository.enqueue(latest, job.targetLanguage)
+                        }
                     } else {
                         when (TranslationRetryPolicy.nextFailedStatus(job.attempts)) {
-                            TranslationJobStatus.Failed -> translationJobRepository.markFailed(job.messageUid)
-                            TranslationJobStatus.Pending -> translationJobRepository.markPending(job.messageUid)
+                            TranslationJobStatus.Failed -> translationJobRepository.markFailed(job.jobKey)
+                            TranslationJobStatus.Pending -> translationJobRepository.markPending(job.jobKey)
                             TranslationJobStatus.Running -> Unit
                         }
                     }

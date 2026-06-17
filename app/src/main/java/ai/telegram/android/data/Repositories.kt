@@ -7,6 +7,7 @@ import ai.telegram.android.data.local.ChatEntity
 import ai.telegram.android.data.local.ChatHistoryStateEntity
 import ai.telegram.android.data.local.HiddenContentEntity
 import ai.telegram.android.data.local.MessageEntity
+import ai.telegram.android.data.local.MessageTranslationEntity
 import ai.telegram.android.data.local.TranslationJobEntity
 import ai.telegram.android.data.local.SenderEntity
 import ai.telegram.android.data.local.TranslationCacheEntity
@@ -276,12 +277,15 @@ class MessageRepository(
         } else {
             TranslationFailureReason.None
         },
-        targetLanguage: String = message.translationTargetLanguage.ifBlank { "vi" }
-    ) {
+        targetLanguage: String = message.translationTargetLanguage.ifBlank { "vi" },
+        expectedContentHash: String = ContentNormalizer.contentHash(message.originalText),
+        providerVersion: String = MESSAGE_INLINE_TRANSLATION_PROVIDER_VERSION
+    ): Boolean {
         val detected = detectedLanguage?.takeIf { it.isNotBlank() }
-        if (detected == null) {
+        val updatedRows = if (detected == null) {
             database.messageDao().updateTranslation(
                 uid = message.uid(),
+                expectedContentHash = expectedContentHash,
                 translatedText = translatedText,
                 translationStatus = status.name,
                 translationFailureReason = failureReason.name,
@@ -290,6 +294,7 @@ class MessageRepository(
         } else {
             database.messageDao().updateTranslationWithDetectedLanguage(
                 uid = message.uid(),
+                expectedContentHash = expectedContentHash,
                 translatedText = translatedText,
                 translationStatus = status.name,
                 detectedLanguage = detected,
@@ -297,11 +302,33 @@ class MessageRepository(
                 translationTargetLanguage = targetLanguage
             )
         }
+        val updated = updatedRows > 0
+        if (updated) {
+            database.messageTranslationDao().upsert(
+                MessageTranslationEntity(
+                    messageUid = message.uid(),
+                    contentHash = expectedContentHash,
+                    targetLanguage = targetLanguage,
+                    providerVersion = providerVersion,
+                    translatedText = translatedText,
+                    status = status.name,
+                    detectedLanguage = detected ?: message.detectedLanguage,
+                    failureReason = failureReason.name,
+                    updatedAtMillis = System.currentTimeMillis()
+                )
+            )
+        }
+        return updated
     }
 
     suspend fun clear() {
         database.messageDao().clear()
         database.chatHistoryStateDao().clear()
+        database.messageTranslationDao().clear()
+    }
+
+    private companion object {
+        const val MESSAGE_INLINE_TRANSLATION_PROVIDER_VERSION = "message-inline-v1"
     }
 }
 
@@ -328,7 +355,7 @@ class ChatHistoryStateRepository(
 
     suspend fun shouldLoadOlderHistory(chatId: Long, fromMessageId: Long): Boolean {
         if (chatId == 0L || fromMessageId <= 0L) return false
-        return dao.find(chatId)?.olderHistoryExhausted != true
+        return true
     }
 
     suspend fun recordMessage(message: TelegramMessage) {
@@ -366,9 +393,11 @@ class ChatHistoryStateRepository(
             messageDao.oldestMessageIdForChat(chatId),
             cleanIds.minOrNull()
         ).minOrNull() ?: 0L
-        val olderExhausted = existing?.olderHistoryExhausted == true ||
-            cleanIds.isEmpty() ||
-            (fromMessageId > 0L && cleanIds.size < requestedLimit.coerceAtLeast(1))
+        val olderExhausted = if (fromMessageId > 0L) {
+            cleanIds.isEmpty()
+        } else {
+            existing?.olderHistoryExhausted == true
+        }
         dao.upsert(
             ChatHistoryStateEntity(
                 chatId = chatId,
@@ -593,11 +622,15 @@ class TranslationJobRepository(
 
     suspend fun enqueue(message: TelegramMessage, targetLanguage: String = "vi") {
         val now = System.currentTimeMillis()
-        val existing = dao.find(message.uid())
+        val contentHash = ContentNormalizer.contentHash(message.originalText)
+        val jobKey = TranslationJobIdentity.key(message.uid(), contentHash, targetLanguage)
+        val existing = dao.find(jobKey)
         if (existing != null && existing.status != TranslationJobStatus.Failed.name) return
         dao.upsert(
             (existing ?: TranslationJobEntity(
+                jobKey = jobKey,
                 messageUid = message.uid(),
+                contentHash = contentHash,
                 targetLanguage = targetLanguage,
                 status = TranslationJobStatus.Pending.name,
                 attempts = 0,
@@ -616,33 +649,33 @@ class TranslationJobRepository(
         return dao.findByStatus(TranslationJobStatus.Pending.name, limit)
     }
 
-    suspend fun markRunning(messageUid: String) {
+    suspend fun markRunning(jobKey: String) {
         dao.updateStatus(
-            messageUid = messageUid,
+            jobKey = jobKey,
             status = TranslationJobStatus.Running.name,
             updatedAtMillis = System.currentTimeMillis(),
             attemptIncrement = 1
         )
     }
 
-    suspend fun markPending(messageUid: String) {
+    suspend fun markPending(jobKey: String) {
         dao.updateStatus(
-            messageUid = messageUid,
+            jobKey = jobKey,
             status = TranslationJobStatus.Pending.name,
             updatedAtMillis = System.currentTimeMillis()
         )
     }
 
-    suspend fun markFailed(messageUid: String) {
+    suspend fun markFailed(jobKey: String) {
         dao.updateStatus(
-            messageUid = messageUid,
+            jobKey = jobKey,
             status = TranslationJobStatus.Failed.name,
             updatedAtMillis = System.currentTimeMillis()
         )
     }
 
-    suspend fun complete(messageUid: String) {
-        dao.delete(messageUid)
+    suspend fun complete(jobKey: String) {
+        dao.delete(jobKey)
     }
 
     suspend fun pendingCount(): Int {
@@ -664,6 +697,12 @@ class TranslationJobRepository(
 
     suspend fun clear() {
         dao.clear()
+    }
+}
+
+internal object TranslationJobIdentity {
+    fun key(messageUid: String, contentHash: String, targetLanguage: String): String {
+        return "$messageUid:$contentHash:${targetLanguage.lowercase()}"
     }
 }
 
@@ -1211,7 +1250,9 @@ private fun TelegramMessage.mergeIncoming(incoming: TelegramMessage): TelegramMe
     val incomingMediaFileChanged = incoming.mediaFileId > 0 && incoming.mediaFileId != mediaFileId
     val mergedOriginalText = incoming.originalText.ifBlank { originalText }
     val originalTextUnchanged = ContentNormalizer.contentHash(mergedOriginalText) == ContentNormalizer.contentHash(originalText)
-    val keepExistingTranslation = incoming.translatedText.isBlank() && translatedText.isNotBlank() && originalTextUnchanged
+    val keepExistingTranslation = incoming.translatedText.isBlank() &&
+        originalTextUnchanged &&
+        hasPreservableTranslationState()
 
     return incoming.copy(
         senderId = incoming.senderId.ifBlank { senderId },
@@ -1261,4 +1302,11 @@ private fun TelegramMessage.mergeIncoming(incoming: TelegramMessage): TelegramMe
         isPinned = isPinned || incoming.isPinned,
         receivedAtMillis = receivedAtMillis
     )
+}
+
+private fun TelegramMessage.hasPreservableTranslationState(): Boolean {
+    return translatedText.isNotBlank() ||
+        translationStatus == TranslationStatus.Translating ||
+        translationStatus == TranslationStatus.Hidden ||
+        (translationStatus == TranslationStatus.Failed && translationFailureReason != TranslationFailureReason.None)
 }

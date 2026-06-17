@@ -90,6 +90,25 @@ class ChatFilterLogicTest {
         assertEquals(incoming.map { it.id }, merged.map { it.id })
     }
 
+    @Test
+    fun shouldRequestLatestMessages_triggersNearBottomOfOldestFirstList() {
+        assertFalse(shouldRequestLatestMessages(visibleMessageCount = 20, lastVisibleItemIndex = 3))
+        assertFalse(shouldRequestLatestMessages(visibleMessageCount = 20, lastVisibleItemIndex = 17))
+        assertTrue(shouldRequestLatestMessages(visibleMessageCount = 20, lastVisibleItemIndex = 18))
+        assertTrue(shouldRequestLatestMessages(visibleMessageCount = 20, lastVisibleItemIndex = 20))
+        assertFalse(shouldRequestLatestMessages(visibleMessageCount = 0, lastVisibleItemIndex = 1))
+        assertFalse(shouldRequestLatestMessages(visibleMessageCount = 20, lastVisibleItemIndex = null))
+    }
+
+    @Test
+    fun shouldRequestOlderMessages_triggersNearTopOfOldestFirstList() {
+        assertTrue(shouldRequestOlderMessages(visibleMessageCount = 20, firstVisibleItemIndex = 0))
+        assertTrue(shouldRequestOlderMessages(visibleMessageCount = 20, firstVisibleItemIndex = 3))
+        assertFalse(shouldRequestOlderMessages(visibleMessageCount = 20, firstVisibleItemIndex = 4))
+        assertFalse(shouldRequestOlderMessages(visibleMessageCount = 0, firstVisibleItemIndex = 0))
+        assertFalse(shouldRequestOlderMessages(visibleMessageCount = 20, firstVisibleItemIndex = null))
+    }
+
     private fun chat(type: String): TelegramChat {
         return TelegramChat(
             id = 1L,

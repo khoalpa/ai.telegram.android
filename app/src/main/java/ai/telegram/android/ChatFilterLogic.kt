@@ -78,6 +78,24 @@ internal fun mergeDisplayedMessages(
     return mergedByKey.values.sortedWith(MessageDisplayComparator)
 }
 
+internal fun shouldRequestLatestMessages(
+    visibleMessageCount: Int,
+    lastVisibleItemIndex: Int?
+): Boolean {
+    if (visibleMessageCount <= 0 || lastVisibleItemIndex == null) return false
+    val firstLatestLoadIndex = (visibleMessageCount - MESSAGE_EDGE_LOAD_THRESHOLD + 1).coerceAtLeast(1)
+    return lastVisibleItemIndex >= firstLatestLoadIndex
+}
+
+internal fun shouldRequestOlderMessages(
+    visibleMessageCount: Int,
+    firstVisibleItemIndex: Int?
+): Boolean {
+    return visibleMessageCount > 0 &&
+        firstVisibleItemIndex != null &&
+        firstVisibleItemIndex <= MESSAGE_EDGE_LOAD_THRESHOLD
+}
+
 internal fun TelegramMessage.containsVisibleLink(): Boolean {
     return visibleLinkSources().any { text -> UrlPattern.containsMatchIn(text) }
 }
@@ -115,6 +133,7 @@ private fun TelegramMessage.visibleLinkSources(): List<String> {
 private const val ONE_DAY_MILLIS = 24L * 60L * 60L * 1000L
 private const val MAX_SENDER_FILTER_OPTIONS = 12
 private const val MAX_PARTIAL_MESSAGE_SNAPSHOT_SIZE = 3
+private const val MESSAGE_EDGE_LOAD_THRESHOLD = 3
 
 private val MessageDisplayComparator = compareByDescending<TelegramMessage> {
     it.receivedAtMillis.takeIf { timestamp -> timestamp > 0L } ?: it.id

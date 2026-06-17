@@ -68,12 +68,14 @@ data class PendingComposerMedia(
     val uri: Uri,
     val kind: MessageKind,
     val displayName: String,
+    val caption: String = "",
     val highQualityPhoto: Boolean = false
 )
 
 internal const val MIN_POLL_OPTIONS = 2
 internal const val MAX_POLL_OPTIONS = 10
 internal const val MAX_COMPOSER_MEDIA = 10
+internal const val MAX_COMPOSER_CAPTION_LENGTH = 1024
 internal const val BYTES_PER_KB = 1024L
 internal const val BYTES_PER_MB = 1024L * 1024L
 internal const val MIN_VIDEO_START_BYTES = 256L * 1024L

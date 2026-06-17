@@ -215,6 +215,7 @@ private val ENABLE_OPTIONAL_TELEGRAM_APIS =
     OptionalTelegramFeatureGates.isEnabled(OptionalTelegramFeature.PremiumBusinessApis)
 private val ENABLE_BOT_WEB_APP_DATA_ACTIONS =
     OptionalTelegramFeatureGates.isEnabled(OptionalTelegramFeature.BotWebAppData)
+private const val LATEST_HISTORY_REFRESH_THROTTLE_MILLIS = 30L * 1000L
 private const val MESSAGE_PAGE_SIZE = 80
 private const val MAX_MESSAGE_PAGE_SIZE = 800
 
@@ -654,6 +655,7 @@ fun TelegramClientApp(
     val requestedThumbnailFileIds = remember(tdLibRestartToken) { mutableSetOf<Int>() }
     val requestedVideoPrefixFileIds = remember(tdLibRestartToken) { mutableSetOf<Int>() }
     val requestedHistoryPages = remember(tdLibRestartToken) { mutableSetOf<String>() }
+    val latestHistoryRefreshTimes = remember(tdLibRestartToken) { mutableMapOf<Long, Long>() }
     val requestedChatMetadataIds = remember(tdLibRestartToken) { mutableSetOf<Long>() }
     val requestedAutoHistoryChatIds = remember(tdLibRestartToken) { mutableSetOf<Long>() }
     var queuedViewedTranslationUid by remember(tdLibRestartToken) { mutableStateOf<String?>(null) }
@@ -740,6 +742,18 @@ fun TelegramClientApp(
             val client = tdLibClientRef.get() ?: return@launch
             if (appViewModel.shouldLoadOlderHistory(chatId, fromMessageId)) {
                 client.loadChatHistory(chatId = chatId, fromMessageId = fromMessageId)
+            }
+        }
+    }
+    fun requestLatestChatHistory(chatId: Long) {
+        if (chatId == 0L) return
+        coroutineScope.launch {
+            val client = tdLibClientRef.get() ?: return@launch
+            val now = System.currentTimeMillis()
+            val lastRefreshAt = latestHistoryRefreshTimes[chatId] ?: 0L
+            if (now - lastRefreshAt >= LATEST_HISTORY_REFRESH_THROTTLE_MILLIS) {
+                latestHistoryRefreshTimes[chatId] = now
+                client.loadChatHistory(chatId = chatId, fromMessageId = 0L)
             }
         }
     }
@@ -1063,7 +1077,10 @@ fun TelegramClientApp(
 
     LaunchedEffect(selectedChatId, tdLibStatus) {
         if (tdLibStatus == TdLibStatus.Ready) {
-            selectedChatId?.let { chatId -> requestInitialChatHistory(chatId) }
+            selectedChatId?.let { chatId ->
+                requestInitialChatHistory(chatId)
+                requestLatestChatHistory(chatId)
+            }
         }
     }
 
@@ -1557,11 +1574,12 @@ fun TelegramClientApp(
                                 }
                             }
                             result.onSuccess { media ->
+                                val effectiveCaption = composerMedia.caption.ifBlank { caption }
                                 tdLibClient.sendMediaMessage(
                                     chatId = chatId,
                                     localPath = media.localPath,
                                     kind = media.kind,
-                                    caption = caption,
+                                    caption = effectiveCaption,
                                     options = options,
                                     mediaOptions = MediaSendOptions(
                                         highQualityPhoto = composerMedia.highQualityPhoto && media.kind == MessageKind.Image
@@ -1588,7 +1606,7 @@ fun TelegramClientApp(
                                         TelegramOutgoingMedia(
                                             localPath = prepared.localPath,
                                             kind = prepared.kind,
-                                            caption = if (index == 0) caption else "",
+                                            caption = item.caption.ifBlank { if (index == 0) caption else "" },
                                             mediaOptions = MediaSendOptions(
                                                 highQualityPhoto = item.highQualityPhoto && prepared.kind == MessageKind.Image
                                             )
@@ -1687,6 +1705,9 @@ fun TelegramClientApp(
                     onReactToMessage = { message, emoji ->
                         tdLibClient.addMessageReaction(message.chatId, message.id, emoji)
                         telegramOperationMessage = context.operationPending(R.string.telegram_action_reaction_requested)
+                    },
+                    onLoadLatestMessages = { chatId ->
+                        requestLatestChatHistory(chatId)
                     },
                     onLoadOlderMessages = { chatId, fromMessageId ->
                         messagePageSize = (messagePageSize + MESSAGE_PAGE_SIZE).coerceAtMost(MAX_MESSAGE_PAGE_SIZE)

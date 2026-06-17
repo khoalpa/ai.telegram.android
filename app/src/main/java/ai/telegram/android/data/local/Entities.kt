@@ -237,14 +237,38 @@ data class CacheTotals(
 }
 
 @Entity(
+    tableName = "message_translations",
+    primaryKeys = ["messageUid", "contentHash", "targetLanguage", "providerVersion"],
+    indices = [
+        Index(value = ["messageUid", "targetLanguage"], name = "index_message_translations_messageUid_targetLanguage"),
+        Index(value = ["contentHash", "targetLanguage"], name = "index_message_translations_contentHash_targetLanguage"),
+        Index(value = ["updatedAtMillis"], name = "index_message_translations_updatedAtMillis")
+    ]
+)
+data class MessageTranslationEntity(
+    val messageUid: String,
+    val contentHash: String,
+    val targetLanguage: String,
+    val providerVersion: String,
+    val translatedText: String,
+    val status: String,
+    val detectedLanguage: String,
+    val failureReason: String,
+    val updatedAtMillis: Long
+)
+
+@Entity(
     tableName = "translation_jobs",
     indices = [
         Index(value = ["status", "createdAtMillis"], name = "index_translation_jobs_status_createdAtMillis"),
-        Index(value = ["status", "updatedAtMillis"], name = "index_translation_jobs_status_updatedAtMillis")
+        Index(value = ["status", "updatedAtMillis"], name = "index_translation_jobs_status_updatedAtMillis"),
+        Index(value = ["messageUid"], name = "index_translation_jobs_messageUid")
     ]
 )
 data class TranslationJobEntity(
-    @PrimaryKey val messageUid: String,
+    @PrimaryKey val jobKey: String,
+    val messageUid: String,
+    val contentHash: String,
     val targetLanguage: String,
     val status: String,
     val attempts: Int,

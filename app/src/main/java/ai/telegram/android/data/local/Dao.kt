@@ -271,15 +271,17 @@ interface MessageDao {
             translationFailureReason = :translationFailureReason,
             translationTargetLanguage = :translationTargetLanguage
         WHERE uid = :uid
+          AND (:expectedContentHash = '' OR contentHash = :expectedContentHash)
         """
     )
     suspend fun updateTranslation(
         uid: String,
+        expectedContentHash: String,
         translatedText: String,
         translationStatus: String,
         translationFailureReason: String,
         translationTargetLanguage: String
-    )
+    ): Int
 
     @Query(
         """
@@ -290,16 +292,18 @@ interface MessageDao {
             translationFailureReason = :translationFailureReason,
             translationTargetLanguage = :translationTargetLanguage
         WHERE uid = :uid
+          AND (:expectedContentHash = '' OR contentHash = :expectedContentHash)
         """
     )
     suspend fun updateTranslationWithDetectedLanguage(
         uid: String,
+        expectedContentHash: String,
         translatedText: String,
         translationStatus: String,
         detectedLanguage: String,
         translationFailureReason: String,
         translationTargetLanguage: String
-    )
+    ): Int
 
     @Upsert
     suspend fun upsert(message: MessageEntity)
@@ -319,8 +323,8 @@ interface ChatHistoryStateDao {
 
 @Dao
 interface TranslationJobDao {
-    @Query("SELECT * FROM translation_jobs WHERE messageUid = :messageUid LIMIT 1")
-    suspend fun find(messageUid: String): TranslationJobEntity?
+    @Query("SELECT * FROM translation_jobs WHERE jobKey = :jobKey LIMIT 1")
+    suspend fun find(jobKey: String): TranslationJobEntity?
 
     @Query("SELECT * FROM translation_jobs WHERE status = :status ORDER BY createdAtMillis ASC LIMIT :limit")
     suspend fun findByStatus(status: String, limit: Int): List<TranslationJobEntity>
@@ -356,24 +360,53 @@ interface TranslationJobDao {
         SET status = :status,
             attempts = attempts + :attemptIncrement,
             updatedAtMillis = :updatedAtMillis
-        WHERE messageUid = :messageUid
+        WHERE jobKey = :jobKey
         """
     )
     suspend fun updateStatus(
-        messageUid: String,
+        jobKey: String,
         status: String,
         updatedAtMillis: Long,
         attemptIncrement: Int = 0
     )
 
-    @Query("DELETE FROM translation_jobs WHERE messageUid = :messageUid")
-    suspend fun delete(messageUid: String)
+    @Query("DELETE FROM translation_jobs WHERE jobKey = :jobKey")
+    suspend fun delete(jobKey: String)
 
     @Query("DELETE FROM translation_jobs")
     suspend fun clear()
 
     @Upsert
     suspend fun upsert(job: TranslationJobEntity)
+}
+
+@Dao
+interface MessageTranslationDao {
+    @Query(
+        """
+        SELECT * FROM message_translations
+        WHERE messageUid = :messageUid
+          AND contentHash = :contentHash
+          AND targetLanguage = :targetLanguage
+          AND providerVersion = :providerVersion
+        LIMIT 1
+        """
+    )
+    suspend fun find(
+        messageUid: String,
+        contentHash: String,
+        targetLanguage: String,
+        providerVersion: String
+    ): MessageTranslationEntity?
+
+    @Query("DELETE FROM message_translations WHERE messageUid = :messageUid")
+    suspend fun deleteForMessage(messageUid: String)
+
+    @Query("DELETE FROM message_translations")
+    suspend fun clear()
+
+    @Upsert
+    suspend fun upsert(translation: MessageTranslationEntity)
 }
 
 @Dao

@@ -837,6 +837,14 @@
     <string name="composer_clear_media">Clear media</string>
     <string name="composer_media_ready" tools:ignore="PluralsCandidate">%1$d/%2$d media ready</string>
     <string name="composer_media_preview">Attached media preview</string>
+    <string name="composer_media_review_title">Review media %1$d/%2$d</string>
+    <string name="composer_media_review_close">Close media review</string>
+    <string name="composer_media_review_previous">Previous media</string>
+    <string name="composer_media_review_next">Next media</string>
+    <string name="composer_media_caption_hint">Caption for this media</string>
+    <string name="composer_media_move_left">Move left</string>
+    <string name="composer_media_move_right">Move right</string>
+    <string name="composer_media_item_captioned">This media has its own caption</string>
     <string name="composer_camera_photo_name">Photo from camera</string>
     <string name="date_filter_all">Any time</string>
     <string name="date_filter_today">24h</string>

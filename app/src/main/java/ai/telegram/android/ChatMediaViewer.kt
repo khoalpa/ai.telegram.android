@@ -2190,6 +2190,7 @@ internal fun Context.pendingComposerMedia(
         displayName = contentResolver.displayName(uri)
             ?: uri.lastPathSegment?.substringAfterLast('/')
             ?: getString(kind.composerLabelRes()),
+        caption = "",
         highQualityPhoto = highQualityPhoto && kind == MessageKind.Image
     )
 }

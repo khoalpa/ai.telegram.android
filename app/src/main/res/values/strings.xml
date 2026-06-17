@@ -474,6 +474,14 @@
     <string name="composer_clear_media">Xóa media</string>
     <string name="composer_media_ready" tools:ignore="PluralsCandidate">%1$d/%2$d media sẵn sàng</string>
     <string name="composer_media_preview">Xem trước media đính kèm</string>
+    <string name="composer_media_review_title">Duyệt media %1$d/%2$d</string>
+    <string name="composer_media_review_close">Đóng review media</string>
+    <string name="composer_media_review_previous">Media trước</string>
+    <string name="composer_media_review_next">Media sau</string>
+    <string name="composer_media_caption_hint">Caption cho media này</string>
+    <string name="composer_media_move_left">Đổi sang trái</string>
+    <string name="composer_media_move_right">Đổi sang phải</string>
+    <string name="composer_media_item_captioned">Media này có caption riêng</string>
     <string name="composer_camera_photo_name">Ảnh chup tu camera</string>
     <string name="create_poll">Tạo poll</string>
     <string name="send_poll">Gửi poll</string>

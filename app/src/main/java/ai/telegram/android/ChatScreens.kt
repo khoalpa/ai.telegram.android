@@ -40,6 +40,8 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.widget.MediaController
+import android.widget.VideoView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
@@ -76,6 +78,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -204,6 +207,7 @@ fun ChatScreen(
     onPinMessage: (TelegramMessage) -> Unit,
     onUnpinMessage: (TelegramMessage) -> Unit,
     onReactToMessage: (TelegramMessage, String) -> Unit,
+    onLoadLatestMessages: (Long) -> Unit,
     onLoadOlderMessages: (Long, Long) -> Unit,
     onSearchChatMessages: (Long, String, TelegramMessageSearchFilter) -> Unit,
     onSearchPublicPosts: (String, TelegramMessageSearchFilter) -> Unit,
@@ -252,6 +256,7 @@ fun ChatScreen(
         onPinMessage = onPinMessage,
         onUnpinMessage = onUnpinMessage,
         onReactToMessage = onReactToMessage,
+        onLoadLatestMessages = onLoadLatestMessages,
         onLoadOlderMessages = onLoadOlderMessages,
         onSearchChatMessages = onSearchChatMessages,
         onSearchPublicPosts = onSearchPublicPosts,
@@ -303,6 +308,7 @@ private fun TelegramLikeChatScreen(
     onPinMessage: (TelegramMessage) -> Unit,
     onUnpinMessage: (TelegramMessage) -> Unit,
     onReactToMessage: (TelegramMessage, String) -> Unit,
+    onLoadLatestMessages: (Long) -> Unit,
     onLoadOlderMessages: (Long, Long) -> Unit,
     onSearchChatMessages: (Long, String, TelegramMessageSearchFilter) -> Unit,
     onSearchPublicPosts: (String, TelegramMessageSearchFilter) -> Unit,
@@ -342,6 +348,7 @@ private fun TelegramLikeChatScreen(
     var contactLastName by remember(selectedChatId) { mutableStateOf("") }
     var contactPhoneNumber by remember(selectedChatId) { mutableStateOf("") }
     var pendingMedia by remember(selectedChatId) { mutableStateOf<List<PendingComposerMedia>>(emptyList()) }
+    var pendingMediaReviewId by rememberSaveable(selectedChatId) { mutableStateOf<String?>(null) }
     var pendingCameraUri by remember(selectedChatId) { mutableStateOf<Uri?>(null) }
     var activeVideoKey by rememberSaveable(selectedChatId) { mutableStateOf<String?>(null) }
     val selectedChat = chats.firstOrNull { it.id == selectedChatId }
@@ -407,6 +414,7 @@ private fun TelegramLikeChatScreen(
                 uri = uri,
                 kind = MessageKind.Image,
                 displayName = resources.getString(R.string.composer_camera_photo_name),
+                caption = "",
                 highQualityPhoto = highQualityPhotos
             )
         }
@@ -570,18 +578,26 @@ private fun TelegramLikeChatScreen(
     val selectionMode = selectedMessageKeys.isNotEmpty()
     val oldestMessageId = remember(displayedMessages) { displayedMessages.minOfOrNull { it.id } ?: 0L }
     val messageListState = rememberLazyListState()
+    var olderAutoPagesRemaining by remember(selectedChat.id) { mutableIntStateOf(0) }
+    var lastOlderAutoRequestMessageId by remember(selectedChat.id) { mutableLongStateOf(0L) }
+    val shouldLoadLatestMessages by remember(messageListState, visibleMessages) {
+        derivedStateOf {
+            val layoutInfo = messageListState.layoutInfo
+            val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index
+            shouldRequestLatestMessages(visibleMessages.size, lastVisibleIndex)
+        }
+    }
     val shouldLoadOlderMessages by remember(messageListState, visibleMessages) {
         derivedStateOf {
             val layoutInfo = messageListState.layoutInfo
-            val firstVisibleIndex = layoutInfo.visibleItemsInfo.firstOrNull()?.index ?: return@derivedStateOf false
-            visibleMessages.isNotEmpty() && firstVisibleIndex <= 3
+            val firstVisibleIndex = layoutInfo.visibleItemsInfo.firstOrNull()?.index
+            shouldRequestOlderMessages(visibleMessages.size, firstVisibleIndex)
         }
     }
     val isNearLatestMessage by remember(messageListState, visibleMessages) {
         derivedStateOf {
             val lastVisibleIndex = messageListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
-                ?: return@derivedStateOf false
-            visibleMessages.isNotEmpty() && lastVisibleIndex >= visibleMessages.size
+            shouldRequestLatestMessages(visibleMessages.size, lastVisibleIndex)
         }
     }
     val currentViewedMessage by remember(messageListState, visibleMessages) {
@@ -626,8 +642,33 @@ private fun TelegramLikeChatScreen(
         }
     }
 
+    LaunchedEffect(selectedChat.id) {
+        onLoadLatestMessages(selectedChat.id)
+    }
+
+    LaunchedEffect(shouldLoadLatestMessages, selectedChat.id) {
+        if (shouldLoadLatestMessages) {
+            onLoadLatestMessages(selectedChat.id)
+        }
+    }
+
+    LaunchedEffect(shouldLoadOlderMessages, selectedChat.id) {
+        if (shouldLoadOlderMessages) {
+            olderAutoPagesRemaining = OLDER_EDGE_AUTO_PAGE_LIMIT
+        }
+    }
+
     LaunchedEffect(shouldLoadOlderMessages, selectedChat.id, oldestMessageId) {
-        if (shouldLoadOlderMessages && oldestMessageId > 0L) {
+        val shouldContinueOlderAutoLoad = shouldLoadOlderMessages || olderAutoPagesRemaining > 0
+        if (
+            shouldContinueOlderAutoLoad &&
+            oldestMessageId > 0L &&
+            oldestMessageId != lastOlderAutoRequestMessageId
+        ) {
+            lastOlderAutoRequestMessageId = oldestMessageId
+            if (olderAutoPagesRemaining > 0) {
+                olderAutoPagesRemaining -= 1
+            }
             onLoadOlderMessages(selectedChat.id, oldestMessageId)
         }
     }
@@ -680,6 +721,28 @@ private fun TelegramLikeChatScreen(
         visibleMessages.isNotEmpty() -> MessageListOverlayState.None
         showMessageSkeleton && displayedMessages.isEmpty() -> MessageListOverlayState.Loading
         else -> MessageListOverlayState.Empty
+    }
+
+    if (pendingMediaReviewId != null && pendingMedia.isNotEmpty()) {
+        PendingComposerMediaReviewDialog(
+            media = pendingMedia,
+            selectedMediaId = pendingMediaReviewId,
+            onSelectedMediaChange = { pendingMediaReviewId = it },
+            onCaptionChange = { mediaId, caption ->
+                pendingMedia = pendingMedia.map { item ->
+                    if (item.id == mediaId) item.copy(caption = caption) else item
+                }
+            },
+            onMoveMedia = { mediaId, direction ->
+                pendingMedia = pendingMedia.movePendingMedia(mediaId, direction)
+            },
+            onRemoveMedia = { mediaId ->
+                val nextMedia = pendingMedia.filterNot { it.id == mediaId }
+                pendingMedia = nextMedia
+                pendingMediaReviewId = nextMedia.firstOrNull()?.id
+            },
+            onClose = { pendingMediaReviewId = null }
+        )
     }
 
     if (bulkDeleteDialogOpen) {
@@ -1194,10 +1257,17 @@ private fun TelegramLikeChatScreen(
                         highQualityPhotos = highQualityPhotos,
                         onHighQualityPhotosChange = { highQualityPhotos = it },
                         pendingMedia = pendingMedia,
+                        onOpenPendingMediaReview = { mediaId -> pendingMediaReviewId = mediaId },
                         onRemovePendingMedia = { mediaId ->
                             pendingMedia = pendingMedia.filterNot { it.id == mediaId }
+                            if (pendingMediaReviewId == mediaId) {
+                                pendingMediaReviewId = pendingMedia.firstOrNull()?.id
+                            }
                         },
-                        onClearPendingMedia = { pendingMedia = emptyList() },
+                        onClearPendingMedia = {
+                            pendingMedia = emptyList()
+                            pendingMediaReviewId = null
+                        },
                         onAttachPhoto = { photoPickerLauncher.launch("image/*") },
                         onAttachVideo = { videoPickerLauncher.launch("video/*") },
                         onAttachVoice = { voicePickerLauncher.launch("audio/*") },
@@ -1218,15 +1288,16 @@ private fun TelegramLikeChatScreen(
                         onSend = {
                             val caption = draftMessage
                             if (pendingMedia.isNotEmpty()) {
-                                val mediaAlbum = pendingMedia.filter { it.kind == MessageKind.Image || it.kind == MessageKind.Video }
-                                if (mediaAlbum.size == pendingMedia.size && pendingMedia.size > 1) {
-                                    onSendMediaAlbum(selectedChat.id, pendingMedia, caption, currentSendOptions)
+                                val mediaToSend = pendingMedia.withComposerFallbackCaption(caption)
+                                val mediaAlbum = mediaToSend.filter { it.kind == MessageKind.Image || it.kind == MessageKind.Video }
+                                if (mediaAlbum.size == mediaToSend.size && mediaToSend.size > 1) {
+                                    onSendMediaAlbum(selectedChat.id, mediaToSend, "", currentSendOptions)
                                 } else {
-                                    pendingMedia.forEachIndexed { index, media ->
+                                    mediaToSend.forEachIndexed { index, media ->
                                         onSendMedia(
                                             selectedChat.id,
                                             media,
-                                            if (index == 0) caption else "",
+                                            media.caption,
                                             currentSendOptions
                                         )
                                     }
@@ -1242,6 +1313,7 @@ private fun TelegramLikeChatScreen(
                             draftMessage = ""
                             replyToMessage = null
                             pendingMedia = emptyList()
+                            pendingMediaReviewId = null
                         },
                         modifier = Modifier.padding(horizontal = AiThemeTokens.ScreenPadding, vertical = AiThemeTokens.ListSpacing)
                     )
@@ -2062,6 +2134,7 @@ private fun MessageComposer(
     highQualityPhotos: Boolean,
     onHighQualityPhotosChange: (Boolean) -> Unit,
     pendingMedia: List<PendingComposerMedia>,
+    onOpenPendingMediaReview: (String) -> Unit,
     onRemovePendingMedia: (String) -> Unit,
     onClearPendingMedia: () -> Unit,
     onAttachPhoto: () -> Unit,
@@ -2118,6 +2191,7 @@ private fun MessageComposer(
         if (pendingMedia.isNotEmpty()) {
             ComposerMediaTray(
                 media = pendingMedia,
+                onOpen = onOpenPendingMediaReview,
                 onRemove = onRemovePendingMedia,
                 onClear = onClearPendingMedia
             )
@@ -2274,8 +2348,321 @@ private fun MessageComposer(
 }
 
 @Composable
+private fun PendingComposerMediaReviewDialog(
+    media: List<PendingComposerMedia>,
+    selectedMediaId: String?,
+    onSelectedMediaChange: (String) -> Unit,
+    onCaptionChange: (String, String) -> Unit,
+    onMoveMedia: (String, Int) -> Unit,
+    onRemoveMedia: (String) -> Unit,
+    onClose: () -> Unit
+) {
+    val selectedIndex = media.indexOfFirst { it.id == selectedMediaId }.takeIf { it >= 0 } ?: 0
+    val selectedMedia = media.getOrNull(selectedIndex) ?: return
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(androidx.compose.ui.graphics.Color.Black),
+            color = androidx.compose.ui.graphics.Color.Black
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(AiThemeTokens.ScreenPadding),
+                verticalArrangement = Arrangement.spacedBy(AiThemeTokens.CompactSpacing)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(AiThemeTokens.CompactSpacing)
+                ) {
+                    IconButton(onClick = onClose) {
+                        Icon(
+                            painter = painterResource(android.R.drawable.ic_menu_close_clear_cancel),
+                            contentDescription = stringResource(R.string.composer_media_review_close),
+                            tint = androidx.compose.ui.graphics.Color.White
+                        )
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(
+                                R.string.composer_media_review_title,
+                                selectedIndex + 1,
+                                media.size
+                            ),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = androidx.compose.ui.graphics.Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = selectedMedia.displayName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.74f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            media.getOrNull(selectedIndex - 1)?.let { onSelectedMediaChange(it.id) }
+                        },
+                        enabled = selectedIndex > 0
+                    ) {
+                        Icon(
+                            painter = painterResource(android.R.drawable.ic_media_previous),
+                            contentDescription = stringResource(R.string.composer_media_review_previous),
+                            tint = androidx.compose.ui.graphics.Color.White
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            media.getOrNull(selectedIndex + 1)?.let { onSelectedMediaChange(it.id) }
+                        },
+                        enabled = selectedIndex < media.lastIndex
+                    ) {
+                        Icon(
+                            painter = painterResource(android.R.drawable.ic_media_next),
+                            contentDescription = stringResource(R.string.composer_media_review_next),
+                            tint = androidx.compose.ui.graphics.Color.White
+                        )
+                    }
+                }
+
+                PendingComposerMediaReviewPreview(
+                    media = selectedMedia,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                )
+
+                OutlinedTextField(
+                    value = selectedMedia.caption,
+                    onValueChange = { onCaptionChange(selectedMedia.id, it.take(MAX_COMPOSER_CAPTION_LENGTH)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                    maxLines = 4,
+                    label = { Text(stringResource(R.string.composer_media_caption_hint)) },
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = androidx.compose.ui.graphics.Color.White,
+                        unfocusedTextColor = androidx.compose.ui.graphics.Color.White,
+                        focusedLabelColor = androidx.compose.ui.graphics.Color.White,
+                        unfocusedLabelColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.72f),
+                        focusedBorderColor = androidx.compose.ui.graphics.Color.White,
+                        unfocusedBorderColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.42f),
+                        cursorColor = androidx.compose.ui.graphics.Color.White
+                    )
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(AiThemeTokens.CompactSpacing),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = { onMoveMedia(selectedMedia.id, -1) },
+                        enabled = selectedIndex > 0
+                    ) {
+                        Text(stringResource(R.string.composer_media_move_left))
+                    }
+                    OutlinedButton(
+                        onClick = { onMoveMedia(selectedMedia.id, 1) },
+                        enabled = selectedIndex < media.lastIndex
+                    ) {
+                        Text(stringResource(R.string.composer_media_move_right))
+                    }
+                    Spacer(Modifier.weight(1f))
+                    OutlinedButton(onClick = { onRemoveMedia(selectedMedia.id) }) {
+                        Text(stringResource(R.string.remove))
+                    }
+                }
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(AiThemeTokens.CompactSpacing)
+                ) {
+                    itemsIndexed(media, key = { _, item -> item.id }) { index, item ->
+                        PendingComposerMediaReviewThumb(
+                            media = item,
+                            index = index,
+                            selected = item.id == selectedMedia.id,
+                            onClick = { onSelectedMediaChange(item.id) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PendingComposerMediaReviewPreview(
+    media: PendingComposerMedia,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        when (media.kind) {
+            MessageKind.Image -> {
+                val bitmap = rememberComposerPreviewBitmap(media)
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap,
+                        contentDescription = stringResource(R.string.composer_media_preview),
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                } else {
+                    PendingComposerMediaPlaceholder(media)
+                }
+            }
+            MessageKind.Video,
+            MessageKind.VideoNote -> {
+                ComposerVideoPreview(
+                    uri = media.uri,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            else -> PendingComposerMediaPlaceholder(media)
+        }
+    }
+}
+
+@Composable
+private fun ComposerVideoPreview(
+    uri: Uri,
+    modifier: Modifier = Modifier
+) {
+    AndroidView(
+        modifier = modifier,
+        factory = { context ->
+            VideoView(context).apply {
+                tag = uri
+                setVideoURI(uri)
+                setMediaController(MediaController(context).also { it.setAnchorView(this) })
+                setOnPreparedListener { player ->
+                    player.isLooping = true
+                    start()
+                }
+            }
+        },
+        update = { view ->
+            if (view.tag != uri) {
+                view.tag = uri
+                view.setVideoURI(uri)
+                view.setOnPreparedListener { player ->
+                    player.isLooping = true
+                    view.start()
+                }
+            }
+        },
+        onRelease = { view ->
+            view.stopPlayback()
+        }
+    )
+}
+
+@Composable
+private fun PendingComposerMediaPlaceholder(media: PendingComposerMedia) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(AiThemeTokens.CardPadding),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            painter = painterResource(media.kind.composerIconRes()),
+            contentDescription = null,
+            modifier = Modifier.size(AiThemeTokens.HeroIconTileSize),
+            tint = androidx.compose.ui.graphics.Color.White
+        )
+        Spacer(Modifier.height(AiThemeTokens.CompactSpacing))
+        Text(
+            text = media.displayName,
+            color = androidx.compose.ui.graphics.Color.White,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = stringResource(media.kind.composerLabelRes()),
+            color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.72f),
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+}
+
+@Composable
+private fun PendingComposerMediaReviewThumb(
+    media: PendingComposerMedia,
+    index: Int,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .width(84.dp)
+            .height(70.dp)
+            .clickable(onClick = onClick),
+        color = androidx.compose.ui.graphics.Color.White.copy(alpha = if (selected) 0.22f else 0.1f),
+        shape = MaterialTheme.shapes.medium,
+        border = BorderStroke(
+            1.dp,
+            if (selected) {
+                androidx.compose.ui.graphics.Color.White
+            } else {
+                androidx.compose.ui.graphics.Color.White.copy(alpha = 0.28f)
+            }
+        )
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            val bitmap = rememberComposerPreviewBitmap(media)
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Icon(
+                    painter = painterResource(media.kind.composerIconRes()),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(AiThemeTokens.IconSize),
+                    tint = androidx.compose.ui.graphics.Color.White
+                )
+            }
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(4.dp),
+                color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.58f),
+                shape = CircleShape
+            ) {
+                Text(
+                    text = "${index + 1}",
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    color = androidx.compose.ui.graphics.Color.White,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ComposerMediaTray(
     media: List<PendingComposerMedia>,
+    onOpen: (String) -> Unit,
     onRemove: (String) -> Unit,
     onClear: () -> Unit
 ) {
@@ -2309,9 +2696,12 @@ private fun ComposerMediaTray(
                 horizontalArrangement = Arrangement.spacedBy(AiThemeTokens.CompactSpacing),
                 contentPadding = PaddingValues(end = 4.dp)
             ) {
-                items(media, key = { it.id }) { item ->
+                itemsIndexed(media, key = { _, item -> item.id }) { index, item ->
                     ComposerMediaPreview(
                         media = item,
+                        index = index,
+                        totalCount = media.size,
+                        onOpen = { onOpen(item.id) },
                         onRemove = { onRemove(item.id) }
                     )
                 }
@@ -2323,12 +2713,16 @@ private fun ComposerMediaTray(
 @Composable
 private fun ComposerMediaPreview(
     media: PendingComposerMedia,
+    index: Int,
+    totalCount: Int,
+    onOpen: () -> Unit,
     onRemove: () -> Unit
 ) {
     Surface(
         modifier = Modifier
             .width(122.dp)
-            .height(100.dp),
+            .height(100.dp)
+            .clickable(onClick = onOpen),
         color = MaterialTheme.colorScheme.surface,
         shape = MaterialTheme.shapes.medium,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f))
@@ -2391,11 +2785,33 @@ private fun ComposerMediaPreview(
                 shape = MaterialTheme.shapes.small
             ) {
                 Text(
-                    text = stringResource(media.kind.composerLabelRes()),
+                    text = if (totalCount > 1) {
+                        "${index + 1}. ${stringResource(media.kind.composerLabelRes())}"
+                    } else {
+                        stringResource(media.kind.composerLabelRes())
+                    },
                     modifier = Modifier.padding(horizontal = AiThemeTokens.DenseSpacing, vertical = AiThemeTokens.MicroSpacing),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )
+            }
+            if (media.caption.isNotBlank()) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(5.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
+                    shape = CircleShape
+                ) {
+                    Icon(
+                        painter = painterResource(android.R.drawable.ic_menu_edit),
+                        contentDescription = stringResource(R.string.composer_media_item_captioned),
+                        modifier = Modifier
+                            .padding(5.dp)
+                            .size(14.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
             }
         }
     }
@@ -2415,6 +2831,30 @@ private fun rememberComposerPreviewBitmap(media: PendingComposerMedia): androidx
         }
     }
     return bitmap
+}
+
+private fun List<PendingComposerMedia>.withComposerFallbackCaption(caption: String): List<PendingComposerMedia> {
+    val trimmedCaption = caption.trim()
+    if (trimmedCaption.isBlank()) return this
+    return mapIndexed { index, item ->
+        if (index == 0 && item.caption.isBlank()) {
+            item.copy(caption = trimmedCaption)
+        } else {
+            item
+        }
+    }
+}
+
+private fun List<PendingComposerMedia>.movePendingMedia(mediaId: String, direction: Int): List<PendingComposerMedia> {
+    if (direction == 0 || size < 2) return this
+    val fromIndex = indexOfFirst { it.id == mediaId }
+    if (fromIndex < 0) return this
+    val toIndex = (fromIndex + direction).coerceIn(0, lastIndex)
+    if (fromIndex == toIndex) return this
+    return toMutableList().apply {
+        val item = removeAt(fromIndex)
+        add(toIndex, item)
+    }
 }
 
 @Composable
@@ -3369,6 +3809,7 @@ private fun ChatContentFilter.toTelegramMessageSearchFilter(): TelegramMessageSe
 }
 
 private const val SHARED_MEDIA_DAY_MILLIS = 24L * 60L * 60L * 1000L
+private const val OLDER_EDGE_AUTO_PAGE_LIMIT = 3
 
 private fun TelegramMessage.readableTextForCopy(targetLanguage: String = translationTargetLanguage): String {
     return MessagePrivacyPolicy.readableText(this, targetLanguage = targetLanguage)
@@ -3527,6 +3968,7 @@ private fun ChatScreenPreview() {
             onPinMessage = {},
             onUnpinMessage = {},
             onReactToMessage = { _, _ -> },
+            onLoadLatestMessages = {},
             onLoadOlderMessages = { _, _ -> },
             onSearchChatMessages = { _, _, _ -> },
             onSearchPublicPosts = { _, _ -> },

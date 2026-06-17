@@ -10,7 +10,8 @@ import ai.telegram.android.data.TranslationStatus
 
 data class TranslationProcessingResult(
     val completed: Boolean,
-    val failureReason: TranslationFailureReason = TranslationFailureReason.None
+    val failureReason: TranslationFailureReason = TranslationFailureReason.None,
+    val staleContent: Boolean = false
 ) {
     val retryable: Boolean
         get() = failureReason in setOf(
@@ -28,24 +29,34 @@ class TranslationProcessor(
     private val hiddenPreview: String = "Content hidden",
     private val failedPreview: String = "No translation available"
 ) {
-    suspend fun process(message: TelegramMessage, targetLanguage: String = "vi"): TranslationProcessingResult {
+    suspend fun process(
+        message: TelegramMessage,
+        targetLanguage: String = "vi",
+        expectedContentHash: String = ""
+    ): TranslationProcessingResult {
         if (message.originalText.isBlank()) return TranslationProcessingResult(completed = true)
 
         if (blacklistRepository.isHidden(message.originalText)) {
-            messageRepository.updateTranslation(
+            val updated = messageRepository.updateTranslation(
                 message = message,
                 translatedText = "",
-                status = TranslationStatus.Hidden
+                status = TranslationStatus.Hidden,
+                expectedContentHash = expectedContentHash,
+                providerVersion = translationProvider.providerVersion
             )
+            if (!updated) return TranslationProcessingResult(completed = false, staleContent = true)
             chatRepository.touchLastMessage(message.chatId, hiddenPreview)
             return TranslationProcessingResult(completed = true)
         }
 
-        messageRepository.updateTranslation(
+        val markedTranslating = messageRepository.updateTranslation(
             message = message,
             translatedText = "",
-            status = TranslationStatus.Translating
+            status = TranslationStatus.Translating,
+            expectedContentHash = expectedContentHash,
+            providerVersion = translationProvider.providerVersion
         )
+        if (!markedTranslating) return TranslationProcessingResult(completed = false, staleContent = true)
 
         var detectedLanguage = message.detectedLanguage
         val cached = translationCacheRepository.getOrTranslate(
@@ -66,14 +77,17 @@ class TranslationProcessor(
         detectedLanguage = cached.sourceLanguage.ifBlank { detectedLanguage }
 
         if (translated.isBlank()) {
-            messageRepository.updateTranslation(
+            val updated = messageRepository.updateTranslation(
                 message = message,
                 translatedText = "",
                 status = TranslationStatus.Failed,
                 detectedLanguage = detectedLanguage,
                 failureReason = cached.failureReason,
-                targetLanguage = targetLanguage
+                targetLanguage = targetLanguage,
+                expectedContentHash = expectedContentHash,
+                providerVersion = translationProvider.providerVersion
             )
+            if (!updated) return TranslationProcessingResult(completed = false, staleContent = true)
             chatRepository.touchLastMessage(message.chatId, message.originalText.ifBlank { failedPreview })
             return TranslationProcessingResult(
                 completed = !cached.failureReason.isRetryable(),
@@ -81,14 +95,17 @@ class TranslationProcessor(
             )
         }
 
-        messageRepository.updateTranslation(
+        val updated = messageRepository.updateTranslation(
             message = message,
             translatedText = translated,
             status = TranslationStatus.Ready,
             detectedLanguage = detectedLanguage,
             failureReason = TranslationFailureReason.None,
-            targetLanguage = targetLanguage
+            targetLanguage = targetLanguage,
+            expectedContentHash = expectedContentHash,
+            providerVersion = translationProvider.providerVersion
         )
+        if (!updated) return TranslationProcessingResult(completed = false, staleContent = true)
         chatRepository.touchLastMessage(message.chatId, translated)
         return TranslationProcessingResult(completed = true)
     }

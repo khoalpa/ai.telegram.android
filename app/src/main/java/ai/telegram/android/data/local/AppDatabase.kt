@@ -14,12 +14,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MessageEntity::class,
         ChatHistoryStateEntity::class,
         HiddenContentEntity::class,
+        MessageTranslationEntity::class,
         TranslationCacheEntity::class,
         TranslationJobEntity::class,
         MediaCacheEntity::class,
         VideoSubtitleCacheEntity::class
     ],
-    version = 14,
+    version = 16,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -28,6 +29,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
     abstract fun chatHistoryStateDao(): ChatHistoryStateDao
     abstract fun hiddenContentDao(): HiddenContentDao
+    abstract fun messageTranslationDao(): MessageTranslationDao
     abstract fun translationCacheDao(): TranslationCacheDao
     abstract fun translationJobDao(): TranslationJobDao
     abstract fun mediaCacheDao(): MediaCacheDao
@@ -248,6 +250,69 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val migration14To15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS translation_jobs_new (
+                        jobKey TEXT NOT NULL PRIMARY KEY,
+                        messageUid TEXT NOT NULL,
+                        contentHash TEXT NOT NULL,
+                        targetLanguage TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        attempts INTEGER NOT NULL,
+                        createdAtMillis INTEGER NOT NULL,
+                        updatedAtMillis INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT OR REPLACE INTO translation_jobs_new (
+                        jobKey, messageUid, contentHash, targetLanguage, status,
+                        attempts, createdAtMillis, updatedAtMillis
+                    )
+                    SELECT messageUid || ':legacy:' || targetLanguage,
+                        messageUid,
+                        '',
+                        targetLanguage,
+                        status,
+                        attempts,
+                        createdAtMillis,
+                        updatedAtMillis
+                    FROM translation_jobs
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE translation_jobs")
+                db.execSQL("ALTER TABLE translation_jobs_new RENAME TO translation_jobs")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_translation_jobs_status_createdAtMillis ON translation_jobs(status, createdAtMillis)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_translation_jobs_status_updatedAtMillis ON translation_jobs(status, updatedAtMillis)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_translation_jobs_messageUid ON translation_jobs(messageUid)")
+            }
+        }
+
+        private val migration15To16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS message_translations (
+                        messageUid TEXT NOT NULL,
+                        contentHash TEXT NOT NULL,
+                        targetLanguage TEXT NOT NULL,
+                        providerVersion TEXT NOT NULL,
+                        translatedText TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        detectedLanguage TEXT NOT NULL,
+                        failureReason TEXT NOT NULL,
+                        updatedAtMillis INTEGER NOT NULL,
+                        PRIMARY KEY(messageUid, contentHash, targetLanguage, providerVersion)
+                    )
+                    """.trimIndent()
+                )
+                createMessageTranslationIndexes(db)
+            }
+        }
+
         val migrations: Array<Migration>
             get() = arrayOf(
                 migration1To2,
@@ -262,7 +327,9 @@ abstract class AppDatabase : RoomDatabase() {
                 migration10To11,
                 migration11To12,
                 migration12To13,
-                migration13To14
+                migration13To14,
+                migration14To15,
+                migration15To16
             )
 
         private fun createPerformanceIndexes(db: SupportSQLiteDatabase) {
@@ -277,8 +344,15 @@ abstract class AppDatabase : RoomDatabase() {
             db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_mediaThumbnailFileId ON messages(mediaThumbnailFileId)")
             db.execSQL("CREATE INDEX IF NOT EXISTS index_translation_jobs_status_createdAtMillis ON translation_jobs(status, createdAtMillis)")
             db.execSQL("CREATE INDEX IF NOT EXISTS index_translation_jobs_status_updatedAtMillis ON translation_jobs(status, updatedAtMillis)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_translation_jobs_messageUid ON translation_jobs(messageUid)")
             db.execSQL("CREATE INDEX IF NOT EXISTS index_media_cache_state_updatedAtMillis ON media_cache(state, updatedAtMillis)")
             db.execSQL("CREATE INDEX IF NOT EXISTS index_media_cache_lastAccessedAtMillis ON media_cache(lastAccessedAtMillis)")
+        }
+
+        private fun createMessageTranslationIndexes(db: SupportSQLiteDatabase) {
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_message_translations_messageUid_targetLanguage ON message_translations(messageUid, targetLanguage)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_message_translations_contentHash_targetLanguage ON message_translations(contentHash, targetLanguage)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_message_translations_updatedAtMillis ON message_translations(updatedAtMillis)")
         }
 
         private val cleanupCallback = object : RoomDatabase.Callback() {
