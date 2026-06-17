@@ -617,6 +617,20 @@ private fun TelegramLikeSettingsScreen(
             SettingsTrustRow(text = stringResource(R.string.on_device_translation))
             SettingsTrustRow(text = stringResource(R.string.privacy_note))
         }
+
+        SectionHeader(title = stringResource(R.string.settings_section_about))
+        SettingsGroup {
+            SettingsRow(
+                title = stringResource(R.string.app_version),
+                subtitle = stringResource(R.string.app_version_subtitle),
+                value = stringResource(
+                    R.string.app_version_value,
+                    BuildConfig.VERSION_NAME,
+                    BuildConfig.VERSION_CODE
+                ),
+                iconRes = R.drawable.ic_ai_settings
+            )
+        }
     }
 }
 

@@ -699,6 +699,10 @@
     <string name="settings_section_privacy">Quy&#7873;n ri&#234;ng t&#432;</string>
     <string name="settings_section_appearance">Giao di&#7879;n</string>
     <string name="settings_section_notifications">Th&#244;ng b&#225;o</string>
+    <string name="settings_section_about">Th&#244;ng tin</string>
+    <string name="app_version">Phi&#234;n b&#7843;n &#7913;ng d&#7909;ng</string>
+    <string name="app_version_subtitle">B&#7843;n ph&#225;t h&#224;nh v&#224; m&#227; build hi&#7879;n t&#7841;i.</string>
+    <string name="app_version_value">%1$s (%2$d)</string>
     <string name="theme_mode">Ch&#7871; &#273;&#7897; giao di&#7879;n</string>
     <string name="theme_mode_subtitle">Ch&#7885;n s&#225;ng, t&#7889;i ho&#7863;c theo h&#7879; th&#7889;ng.</string>
     <string name="theme_system">Theo h&#7879; th&#7889;ng</string>
