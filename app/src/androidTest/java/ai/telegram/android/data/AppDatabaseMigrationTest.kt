@@ -15,7 +15,7 @@ import org.junit.runner.RunWith
 @DeviceSafeConnectedTest
 class AppDatabaseMigrationTest {
     @Test
-    fun migratesFromVersion1To14AndPreservesMessageAndMainChatList() {
+    fun migratesFromVersion1To16AndPreservesMessageAndMainChatList() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         context.deleteDatabase(TEST_DB)
         SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(TEST_DB), null).apply {
@@ -85,6 +85,16 @@ class AppDatabaseMigrationTest {
         db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='translation_jobs'").use { cursor ->
             assertEquals(true, cursor.moveToFirst())
         }
+        db.query("PRAGMA table_info(translation_jobs)").use { cursor ->
+            val columns = mutableSetOf<String>()
+            while (cursor.moveToNext()) {
+                columns += cursor.getString(1)
+            }
+            assertEquals(true, "jobKey" in columns)
+            assertEquals(true, "messageUid" in columns)
+            assertEquals(true, "contentHash" in columns)
+            assertEquals(true, "targetLanguage" in columns)
+        }
         db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='media_cache'").use { cursor ->
             assertEquals(true, cursor.moveToFirst())
         }
@@ -120,6 +130,35 @@ class AppDatabaseMigrationTest {
             assertEquals(true, cursor.moveToFirst())
         }
         db.query("SELECT name FROM sqlite_master WHERE type='index' AND name='index_translation_jobs_status_createdAtMillis'").use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+        }
+        db.query("SELECT name FROM sqlite_master WHERE type='index' AND name='index_translation_jobs_messageUid'").use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+        }
+        db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='message_translations'").use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+        }
+        db.query("PRAGMA table_info(message_translations)").use { cursor ->
+            val columns = mutableSetOf<String>()
+            while (cursor.moveToNext()) {
+                columns += cursor.getString(1)
+            }
+            assertEquals(true, "messageUid" in columns)
+            assertEquals(true, "contentHash" in columns)
+            assertEquals(true, "targetLanguage" in columns)
+            assertEquals(true, "providerVersion" in columns)
+            assertEquals(true, "translatedText" in columns)
+            assertEquals(true, "status" in columns)
+            assertEquals(true, "detectedLanguage" in columns)
+            assertEquals(true, "failureReason" in columns)
+        }
+        db.query("SELECT name FROM sqlite_master WHERE type='index' AND name='index_message_translations_messageUid_targetLanguage'").use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+        }
+        db.query("SELECT name FROM sqlite_master WHERE type='index' AND name='index_message_translations_contentHash_targetLanguage'").use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+        }
+        db.query("SELECT name FROM sqlite_master WHERE type='index' AND name='index_message_translations_updatedAtMillis'").use { cursor ->
             assertEquals(true, cursor.moveToFirst())
         }
         db.query("PRAGMA table_info(senders)").use { cursor ->
@@ -178,6 +217,6 @@ class AppDatabaseMigrationTest {
     }
 
     private companion object {
-        const val TEST_DB = "migration-1-14-test"
+        const val TEST_DB = "migration-1-16-test"
     }
 }

@@ -355,6 +355,14 @@ class ChatHistoryStateRepository(
 
     suspend fun shouldLoadOlderHistory(chatId: Long, fromMessageId: Long): Boolean {
         if (chatId == 0L || fromMessageId <= 0L) return false
+        val state = dao.find(chatId)
+        if (
+            state?.olderHistoryExhausted == true &&
+            state.oldestMessageId > 0L &&
+            fromMessageId <= state.oldestMessageId
+        ) {
+            return false
+        }
         return true
     }
 
@@ -394,7 +402,11 @@ class ChatHistoryStateRepository(
             cleanIds.minOrNull()
         ).minOrNull() ?: 0L
         val olderExhausted = if (fromMessageId > 0L) {
-            cleanIds.isEmpty()
+            if (requestedLimit > 0) {
+                cleanIds.size < requestedLimit
+            } else {
+                cleanIds.isEmpty()
+            }
         } else {
             existing?.olderHistoryExhausted == true
         }

@@ -1027,7 +1027,7 @@ private fun PhoneAuthFields(
     ) {
         CompactActionButton(
             label = if (authBusy) stringResource(R.string.settings_auth_sending) else stringResource(R.string.tdlib_send_phone),
-            iconRes = android.R.drawable.ic_menu_send,
+            iconRes = R.drawable.ic_action_send,
             onClick = {
                 focusManager.clearFocus(force = true)
                 onSendPhone()
@@ -1116,7 +1116,7 @@ private fun CodeAuthFields(
     }
     AuthActionRow(
         primaryLabel = if (authBusy) stringResource(R.string.settings_auth_sending) else stringResource(R.string.tdlib_send_code),
-        primaryIconRes = android.R.drawable.ic_menu_send,
+        primaryIconRes = R.drawable.ic_action_send,
         onPrimaryClick = {
             focusManager.clearFocus(force = true)
             onSendCode()
@@ -1124,7 +1124,7 @@ private fun CodeAuthFields(
         primaryEnabled = enabled && code.isNotBlank() && !authBusy,
         secondaryContent = {
             IconActionButton(
-                iconRes = android.R.drawable.ic_popup_sync,
+                iconRes = R.drawable.ic_action_refresh,
                 contentDescription = stringResource(R.string.tdlib_resend_code),
                 onClick = {
                     focusManager.clearFocus(force = true)
@@ -1172,7 +1172,7 @@ private fun PasswordAuthFields(
     }
     AuthActionRow(
         primaryLabel = if (authBusy) stringResource(R.string.settings_auth_sending) else stringResource(R.string.tdlib_send_password),
-        primaryIconRes = android.R.drawable.ic_menu_send,
+        primaryIconRes = R.drawable.ic_action_send,
         onPrimaryClick = {
             focusManager.clearFocus(force = true)
             onSendPassword()

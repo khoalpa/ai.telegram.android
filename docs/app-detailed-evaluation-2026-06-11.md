@@ -31,7 +31,7 @@ The app is in a materially stronger beta position than the earlier QA notes: loc
 | Area | Assessment |
 | --- | --- |
 | Architecture | Clear separation between Compose UI, repositories, Room, TDLib client abstraction, translation pipeline and notification layer. |
-| Data persistence | Room schema is versioned to v14 and migration coverage exists from v1 to v14. |
+| Data persistence | Room schema is versioned to v16 in the current repo, and migration coverage exists from v1 to v16. |
 | Auth/session | TDLib database key is randomly generated and wrapped with Android Keystore AES-GCM. Backup and device-transfer extraction are disabled. |
 | Entry intent safety | Telegram links are host/scheme sanitized, shared text is length-limited, shared URI intake now accepts only `content://`, and shared URI count is capped. |
 | Translation pipeline | ML Kit translation has preflight skips, negative cache TTLs, WorkManager retry behavior and cache/model management. |

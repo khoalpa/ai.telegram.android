@@ -489,12 +489,13 @@ class RepositoryRoomTest {
         )
 
         translationJobRepository.enqueue(sourceMessage)
-        translationJobRepository.markRunning(sourceMessage.uid())
-        translationJobRepository.markFailed(sourceMessage.uid())
+        val viJobKey = translationJobKey(sourceMessage)
+        translationJobRepository.markRunning(viJobKey)
+        translationJobRepository.markFailed(viJobKey)
 
         translationJobRepository.enqueue(sourceMessage, targetLanguage = "en")
 
-        val job = database.translationJobDao().find(sourceMessage.uid())
+        val job = database.translationJobDao().find(translationJobKey(sourceMessage, "en"))
         assertEquals(TranslationJobStatus.Pending.name, job?.status)
         assertEquals(0, job?.attempts)
         assertEquals("en", job?.targetLanguage)
@@ -505,11 +506,12 @@ class RepositoryRoomTest {
         val sourceMessage = message(id = 21, originalText = "Already queued.")
 
         translationJobRepository.enqueue(sourceMessage)
-        translationJobRepository.markRunning(sourceMessage.uid())
+        val viJobKey = translationJobKey(sourceMessage)
+        translationJobRepository.markRunning(viJobKey)
 
         translationJobRepository.enqueue(sourceMessage, targetLanguage = "en")
 
-        val job = database.translationJobDao().find(sourceMessage.uid())
+        val job = database.translationJobDao().find(viJobKey)
         assertEquals(TranslationJobStatus.Running.name, job?.status)
         assertEquals(1, job?.attempts)
         assertEquals("vi", job?.targetLanguage)
@@ -642,6 +644,14 @@ class RepositoryRoomTest {
         assertEquals(0L, refreshed?.actualSizeBytes)
         assertEquals(0L, refreshed?.downloadedPrefixBytes)
         assertEquals(MediaCacheState.Requested.name, refreshed?.state)
+    }
+
+    private fun translationJobKey(message: TelegramMessage, targetLanguage: String = "vi"): String {
+        return TranslationJobIdentity.key(
+            message.uid(),
+            ContentNormalizer.contentHash(message.originalText),
+            targetLanguage
+        )
     }
 
     private fun message(

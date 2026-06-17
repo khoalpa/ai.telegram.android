@@ -112,13 +112,14 @@ Bang hien co:
 - `senders`
 - `messages`
 - `hidden_content`
+- `message_translations`
 - `translation_cache`
 - `translation_jobs`
 - `media_cache`
 - `video_subtitle_cache`
 - `chat_history_state`
 
-Database hien o version 14:
+Database hien o version 16:
 
 - v1 -> v2: them chat list, `chatId` va primary key message theo `chatId:messageId`.
 - v2 -> v3: them `translationStatus` cho message.
@@ -133,6 +134,8 @@ Database hien o version 14:
 - v11 -> v12: them `chat_history_state` de tranh tai lai lich su chat da dong bo.
 - v12 -> v13: them `sourceLanguageCode` cho `video_subtitle_cache`.
 - v13 -> v14: them `isMainList` cho chat list chinh va `isContact` cho danh ba.
+- v14 -> v15: doi `translation_jobs` sang primary key `jobKey`, them `contentHash` va giu index theo status/message de tach job theo noi dung/ngon ngu.
+- v15 -> v16: them bang `message_translations` de luu ban dich theo `messageUid + contentHash + targetLanguage + providerVersion`.
 
 Trang thai dich:
 
@@ -345,7 +348,7 @@ Script nay chay unit test, lint, assemble debug APK va assemble Android test APK
 
 Instrumentation test hien co bao ve:
 
-- migration Room tu version 1 len version 14;
+- migration Room tu version 1 len version 16;
 - blacklist ap dung cho noi dung tuong duong sau khi chuan hoa;
 - go blacklist lam hien lai noi dung cung hash;
 - translation cache tai su dung ban dich, tang hit count va tach theo ngon ngu/provider;
