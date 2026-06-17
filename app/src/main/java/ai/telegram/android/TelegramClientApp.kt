@@ -1574,12 +1574,11 @@ fun TelegramClientApp(
                                 }
                             }
                             result.onSuccess { media ->
-                                val effectiveCaption = composerMedia.caption.ifBlank { caption }
                                 tdLibClient.sendMediaMessage(
                                     chatId = chatId,
                                     localPath = media.localPath,
                                     kind = media.kind,
-                                    caption = effectiveCaption,
+                                    caption = composerMedia.effectiveComposerCaption(caption),
                                     options = options,
                                     mediaOptions = MediaSendOptions(
                                         highQualityPhoto = composerMedia.highQualityPhoto && media.kind == MessageKind.Image
@@ -1606,7 +1605,7 @@ fun TelegramClientApp(
                                         TelegramOutgoingMedia(
                                             localPath = prepared.localPath,
                                             kind = prepared.kind,
-                                            caption = item.caption.ifBlank { if (index == 0) caption else "" },
+                                            caption = item.effectiveComposerCaption(if (index == 0) caption else ""),
                                             mediaOptions = MediaSendOptions(
                                                 highQualityPhoto = item.highQualityPhoto && prepared.kind == MessageKind.Image
                                             )

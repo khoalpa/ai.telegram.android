@@ -21,8 +21,10 @@ import ai.telegram.android.data.TelegramSender
 import ai.telegram.android.data.TranslationFailureReason
 import ai.telegram.android.data.TranslationStatus
 import ai.telegram.android.data.translation.MlKitModelDownloadProgress
+import ai.telegram.android.data.translation.MlKitOnDeviceTranslationProvider
 import ai.telegram.android.data.translation.MlKitTranslationModelInfo
 import ai.telegram.android.data.translation.TranslationLanguagePair
+import ai.telegram.android.data.translation.TranslationResult
 import ai.telegram.android.data.translation.VietnameseTranslationPairs
 import ai.telegram.android.data.translation.VideoSubtitleCue
 import ai.telegram.android.data.translation.VideoSubtitleGenerator
@@ -371,6 +373,9 @@ private fun TelegramLikeChatScreen(
     val context = LocalContext.current
     val resources = LocalResources.current
     val clipboardScope = rememberCoroutineScope()
+    val channelTitleTranslator = remember(context) {
+        MlKitOnDeviceTranslationProvider(context.applicationContext)
+    }
     fun appendPendingMedia(
         uris: List<Uri>,
         forcedKind: MessageKind? = null,
@@ -1179,6 +1184,8 @@ private fun TelegramLikeChatScreen(
                             videoSourceLanguage = videoSourceLanguage,
                             videoSubtitleColor = videoSubtitleColor,
                             contentTranslationTargetLanguage = contentTranslationTargetLanguage,
+                            translateChannelTitle = selectedChat.type.equals("channel", ignoreCase = true),
+                            channelTitleTranslator = channelTitleTranslator,
                             activeVideoKey = activeVideoKey,
                             onActiveVideoChange = { activeVideoKey = it },
                             onOpenCache = onOpenCache,
@@ -2510,7 +2517,7 @@ private fun PendingComposerMediaReviewPreview(
     ) {
         when (media.kind) {
             MessageKind.Image -> {
-                val bitmap = rememberComposerPreviewBitmap(media)
+                val bitmap = rememberComposerReviewBitmap(media)
                 if (bitmap != null) {
                     Image(
                         bitmap = bitmap,
@@ -2547,8 +2554,12 @@ private fun ComposerVideoPreview(
                 setVideoURI(uri)
                 setMediaController(MediaController(context).also { it.setAnchorView(this) })
                 setOnPreparedListener { player ->
-                    player.isLooping = true
-                    start()
+                    player.isLooping = false
+                    seekTo(1)
+                    pause()
+                }
+                setOnClickListener {
+                    if (isPlaying) pause() else start()
                 }
             }
         },
@@ -2557,8 +2568,9 @@ private fun ComposerVideoPreview(
                 view.tag = uri
                 view.setVideoURI(uri)
                 view.setOnPreparedListener { player ->
-                    player.isLooping = true
-                    view.start()
+                    player.isLooping = false
+                    view.seekTo(1)
+                    view.pause()
                 }
             }
         },
@@ -2833,28 +2845,20 @@ private fun rememberComposerPreviewBitmap(media: PendingComposerMedia): androidx
     return bitmap
 }
 
-private fun List<PendingComposerMedia>.withComposerFallbackCaption(caption: String): List<PendingComposerMedia> {
-    val trimmedCaption = caption.trim()
-    if (trimmedCaption.isBlank()) return this
-    return mapIndexed { index, item ->
-        if (index == 0 && item.caption.isBlank()) {
-            item.copy(caption = trimmedCaption)
-        } else {
-            item
+@Composable
+private fun rememberComposerReviewBitmap(media: PendingComposerMedia): androidx.compose.ui.graphics.ImageBitmap? {
+    val context = LocalContext.current
+    var bitmap by remember(media.id, media.uri) {
+        mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+    }
+    LaunchedEffect(media.id, media.uri, media.kind) {
+        bitmap = null
+        if (media.kind != MessageKind.Image) return@LaunchedEffect
+        bitmap = withContext(Dispatchers.IO) {
+            context.contentResolver.decodeComposerPreview(media.uri, maxEdgePx = 1600)
         }
     }
-}
-
-private fun List<PendingComposerMedia>.movePendingMedia(mediaId: String, direction: Int): List<PendingComposerMedia> {
-    if (direction == 0 || size < 2) return this
-    val fromIndex = indexOfFirst { it.id == mediaId }
-    if (fromIndex < 0) return this
-    val toIndex = (fromIndex + direction).coerceIn(0, lastIndex)
-    if (fromIndex == toIndex) return this
-    return toMutableList().apply {
-        val item = removeAt(fromIndex)
-        add(toIndex, item)
-    }
+    return bitmap
 }
 
 @Composable
@@ -3120,6 +3124,57 @@ private fun LinkifiedMessageText(
     )
 }
 
+@Composable
+private fun TranslatedChannelTitleLine(
+    title: String,
+    targetLanguage: String,
+    enabled: Boolean,
+    translator: MlKitOnDeviceTranslationProvider
+) {
+    val fallback = remember(title, targetLanguage, enabled) {
+        if (enabled) fallbackVietnameseChannelTitle(title, targetLanguage) else ""
+    }
+    var translatedTitle by remember(title, targetLanguage, enabled) { mutableStateOf(fallback) }
+
+    LaunchedEffect(title, targetLanguage, enabled, fallback) {
+        if (!enabled || !shouldTranslateChannelTitle(title, targetLanguage)) {
+            translatedTitle = ""
+            return@LaunchedEffect
+        }
+        val cacheKey = "${targetLanguage.substringBefore("-").lowercase()}:${title.trim()}"
+        ChannelTitleTranslationCache.get(cacheKey)?.let { cached ->
+            translatedTitle = cached
+            return@LaunchedEffect
+        }
+        if (fallback.isNotBlank()) {
+            ChannelTitleTranslationCache.put(cacheKey, fallback)
+            translatedTitle = fallback
+            return@LaunchedEffect
+        }
+
+        val translated = withContext(Dispatchers.IO) {
+            when (val result = translator.translate(title, targetLanguage)) {
+                is TranslationResult.Success -> normalizeTranslatedChannelTitle(title, result.text)
+                is TranslationResult.Unavailable -> ""
+            }
+        }
+        if (translated.isNotBlank()) {
+            ChannelTitleTranslationCache.put(cacheKey, translated)
+        }
+        translatedTitle = translated
+    }
+
+    if (translatedTitle.isNotBlank()) {
+        Text(
+            text = translatedTitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageCard(
@@ -3132,6 +3187,8 @@ private fun MessageCard(
     videoSourceLanguage: VideoSourceLanguage,
     videoSubtitleColor: VideoSubtitleColor,
     contentTranslationTargetLanguage: String,
+    translateChannelTitle: Boolean,
+    channelTitleTranslator: MlKitOnDeviceTranslationProvider,
     activeVideoKey: String?,
     onActiveVideoChange: (String?) -> Unit,
     onOpenCache: () -> Unit,
@@ -3344,6 +3401,12 @@ private fun MessageCard(
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
+                    )
+                    TranslatedChannelTitleLine(
+                        title = message.chatTitle,
+                        targetLanguage = contentTranslationTargetLanguage,
+                        enabled = translateChannelTitle,
+                        translator = channelTitleTranslator
                     )
                     MessageCompactMetaLine(message)
                 }
@@ -3810,6 +3873,20 @@ private fun ChatContentFilter.toTelegramMessageSearchFilter(): TelegramMessageSe
 
 private const val SHARED_MEDIA_DAY_MILLIS = 24L * 60L * 60L * 1000L
 private const val OLDER_EDGE_AUTO_PAGE_LIMIT = 3
+
+private object ChannelTitleTranslationCache {
+    private val translations = mutableMapOf<String, String>()
+
+    fun get(key: String): String? = synchronized(translations) {
+        translations[key]
+    }
+
+    fun put(key: String, value: String) {
+        synchronized(translations) {
+            translations[key] = value
+        }
+    }
+}
 
 private fun TelegramMessage.readableTextForCopy(targetLanguage: String = translationTargetLanguage): String {
     return MessagePrivacyPolicy.readableText(this, targetLanguage = targetLanguage)

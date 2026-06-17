@@ -91,3 +91,41 @@ internal const val VIDEO_REVIEW_NOTES_PREFIX = "notes:"
 internal const val MESSAGE_LOADING_DEBOUNCE_MS = 280L
 internal const val MESSAGE_EMPTY_RELOAD_GRACE_MS = 5_000L
 internal const val MESSAGE_CONTENT_CROSSFADE_MS = 180
+
+internal fun List<PendingComposerMedia>.withComposerFallbackCaption(caption: String): List<PendingComposerMedia> {
+    val trimmedCaption = caption.trim()
+    if (trimmedCaption.isBlank()) return this
+    return mapIndexed { index, item ->
+        item.copy(caption = composerCaptionWithDraftFallback(index, item.caption, trimmedCaption))
+    }
+}
+
+internal fun PendingComposerMedia.effectiveComposerCaption(fallbackCaption: String): String {
+    return effectiveComposerCaption(caption, fallbackCaption)
+}
+
+internal fun List<PendingComposerMedia>.movePendingMedia(mediaId: String, direction: Int): List<PendingComposerMedia> {
+    if (direction == 0 || size < 2) return this
+    val fromIndex = indexOfFirst { it.id == mediaId }
+    if (fromIndex < 0) return this
+    return moveItem(fromIndex, direction)
+}
+
+internal fun composerCaptionWithDraftFallback(index: Int, mediaCaption: String, draftCaption: String): String {
+    val trimmedDraft = draftCaption.trim()
+    return if (index == 0 && mediaCaption.isBlank()) trimmedDraft else mediaCaption
+}
+
+internal fun effectiveComposerCaption(mediaCaption: String, fallbackCaption: String): String {
+    return mediaCaption.ifBlank { fallbackCaption.trim() }
+}
+
+internal fun <T> List<T>.moveItem(fromIndex: Int, direction: Int): List<T> {
+    if (direction == 0 || size < 2 || fromIndex !in indices) return this
+    val toIndex = (fromIndex + direction).coerceIn(0, lastIndex)
+    if (fromIndex == toIndex) return this
+    return toMutableList().apply {
+        val item = removeAt(fromIndex)
+        add(toIndex, item)
+    }
+}

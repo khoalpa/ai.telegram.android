@@ -58,6 +58,7 @@ class ChatScreenTapTest {
                     onPinMessage = {},
                     onUnpinMessage = {},
                     onReactToMessage = { _, _ -> },
+                    onLoadLatestMessages = {},
                     onLoadOlderMessages = { _, _ -> },
                     onSearchChatMessages = { _, _, _ -> },
                     onSearchPublicPosts = { _, _ -> },
